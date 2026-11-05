@@ -33,6 +33,7 @@ target/
 .DS_Store
 Thumbs.db
 
-### Local Uploads / Templates ###
+### Local Uploads / Templates / Saved DB Connections ###
 templates/
 dist/
+connections.json
