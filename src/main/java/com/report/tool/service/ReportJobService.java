@@ -5,6 +5,7 @@ import com.report.tool.dto.request.ReportConfigRequest;
 import com.report.tool.exception.AppException;
 import com.report.tool.exception.InvalidReportConfigException;
 import com.report.tool.exception.ReportBusyException;
+import com.report.tool.helper.DatabaseReadRetry;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,8 @@ import java.util.stream.Stream;
 
 @Service
 public class ReportJobService {
-    public record Status(String id, String state, String message, int rowCount, List<String> warnings, Instant createdAt) { }
+    public record Status(String id, String state, String message, int rowCount, List<String> warnings, Instant createdAt,
+                         List<String> recoveryMessages) { }
     private static final long TTL_MILLIS = 60 * 60 * 1000L;
     private final ReportEngineService engine;
     private final ReportOutputService output;
@@ -109,7 +111,12 @@ public class ReportJobService {
         try {
             job.control.run(() -> {
                 phase(job, "QUERYING", "Đang đọc và ghép dữ liệu…");
-                List<Map<String, Object>> rows = engine.executeReport(request);
+                List<Map<String, Object>> rows = DatabaseReadRetry.withListener(notice -> {
+                    if (notice.recovered()) {
+                        job.recoveryMessages = List.of("Đã tự kết nối lại nguồn “" + notice.source() + "” và đọc lại truy vấn bị gián đoạn (1/1).");
+                        phase(job, "QUERYING", "Đã kết nối lại. Đang tiếp tục đọc và ghép dữ liệu…");
+                    } else phase(job, "RECONNECTING", "Mất kết nối tới nguồn “" + notice.source() + "”. Đang thử kết nối lại — lần 1/1…");
+                }, () -> engine.executeReport(request));
                 phase(job, "PREPARING", "Đang kiểm tra, lọc và định dạng đầu ra…");
                 ReportOutputService.PreparedReport prepared = output.prepare(request, rows);
                 phase(job, "WRITING", "Đang ghi file Excel…");
@@ -173,10 +180,11 @@ public class ReportJobService {
         volatile String state = "QUEUED", message = "Đang chờ đến lượt…";
         volatile int rowCount;
         volatile List<String> warnings = List.of();
+        volatile List<String> recoveryMessages = List.of();
         volatile long accessed = System.currentTimeMillis();
         volatile Path file;
         volatile Future<?> future;
         boolean terminal() { return Set.of("READY", "FAILED", "CANCELLED").contains(state); }
-        synchronized Status status() { return new Status(id, state, message, rowCount, warnings, created); }
+        synchronized Status status() { return new Status(id, state, message, rowCount, warnings, created, recoveryMessages); }
     }
 }

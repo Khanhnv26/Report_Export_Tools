@@ -8,6 +8,9 @@ import com.report.tool.database.DatabaseIdentifiers;
 import com.report.tool.database.MetadataScope;
 import com.report.tool.exception.DatabaseConnectionException;
 import com.report.tool.helper.DataSourceRegistry;
+import com.report.tool.helper.DatabaseReadRetry;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import com.report.tool.service.MetadataService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,10 +72,8 @@ public class MetadataServiceImpl implements MetadataService {
 
     @Override
     public List<String> getTables(String dbId) {
-        DataSource ds = dataSourceRegistry.getDataSource(dbId);
-        List<String> tables = new ArrayList<>();
-
-        try (Connection conn = ds.getConnection()) {
+        return readMetadata(dbId, conn -> {
+            List<String> tables = new ArrayList<>();
             DatabaseMetaData meta = conn.getMetaData();
             MetadataScope scope = scope(dbId, conn);
             try (ResultSet rs = meta.getTables(scope.catalog(), pattern(meta, scope.schema()), "%", new String[]{"TABLE", "VIEW"})) {
@@ -85,20 +86,15 @@ public class MetadataServiceImpl implements MetadataService {
                     tables.add(rs.getString("TABLE_NAME"));
                 }
             }
-        } catch (SQLException e) {
-            log.error("Lỗi khi đọc danh sách bảng từ Database [{}]: {}", dbId, e.getMessage());
-            throw new DatabaseConnectionException("Không thể đọc danh sách bảng từ Database [" + dbId + "]: " + e.getMessage(), e);
-        }
-        return tables.stream().distinct().sorted().toList();
+            return tables.stream().distinct().sorted().toList();
+        });
     }
 
     @Override
     public List<ColumnResponse> getColumns(String dbId, String tableName) {
         DatabaseIdentifiers.validate(tableName);
-        DataSource ds = dataSourceRegistry.getDataSource(dbId);
-        List<ColumnResponse> columns = new ArrayList<>();
-
-        try (Connection conn = ds.getConnection()) {
+        return readMetadata(dbId, conn -> {
+            List<ColumnResponse> columns = new ArrayList<>();
             DatabaseMetaData meta = conn.getMetaData();
             MetadataScope scope = scope(dbId, conn);
             try (ResultSet rs = meta.getColumns(scope.catalog(), pattern(meta, scope.schema()), pattern(meta, tableName), "%")) {
@@ -111,12 +107,32 @@ public class MetadataServiceImpl implements MetadataService {
                     ));
                 }
             }
-        } catch (SQLException e) {
-            log.error("Lỗi khi đọc danh sách cột từ bảng [{}] của DB [{}]: {}", tableName, dbId, e.getMessage());
-            throw new DatabaseConnectionException("Không thể đọc danh sách cột từ bảng [" + tableName + "]: " + e.getMessage(), e);
-        }
-        return columns;
+            return columns;
+        });
     }
+
+    private <T> T readMetadata(String dbId, MetadataRead<T> operation) {
+        try {
+            return DatabaseReadRetry.read(dbId, dataSourceRegistry.getDatabaseLabel(dbId), () -> {
+                DataSource source = dataSourceRegistry.getDataSource(dbId);
+                try (Connection connection = source.getConnection()) {
+                    try { return operation.read(connection); }
+                    catch (SQLException | RuntimeException failure) {
+                        DatabaseReadRetry.discardBrokenConnection(source, connection, failure);
+                        throw failure;
+                    }
+                } catch (SQLException failure) {
+                    throw new DataAccessResourceFailureException("Database metadata read failed.", failure);
+                }
+            });
+        } catch (DataAccessException failure) {
+            throw new DatabaseConnectionException("Không thể đọc cấu trúc nguồn “" + dataSourceRegistry.getDatabaseLabel(dbId)
+                    + "”. Kiểm tra thông tin xác thực, quyền đọc và kết nối database.", failure);
+        }
+    }
+
+    @FunctionalInterface
+    private interface MetadataRead<T> { T read(Connection connection) throws SQLException; }
 
     private MetadataScope scope(String dbId, Connection connection) throws SQLException {
         return adapters.get(dataSourceRegistry.getDatabaseType(dbId))

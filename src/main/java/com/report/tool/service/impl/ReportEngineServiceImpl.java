@@ -10,6 +10,7 @@ import com.report.tool.exception.ReportBusyException;
 import com.report.tool.helper.DataSourceRegistry;
 import com.report.tool.helper.SqlBuilder;
 import com.report.tool.helper.ReportQueries;
+import com.report.tool.helper.DatabaseReadRetry;
 import com.report.tool.service.ReportCancellation;
 import com.report.tool.service.ReportEngineService;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +52,7 @@ public class ReportEngineServiceImpl implements ReportEngineService {
 
     private List<Map<String, Object>> withPermit(ReportConfigRequest request, boolean preview) {
         if (!reportSlots.tryAcquire()) throw new ReportBusyException();
-        try { return execute(request, preview); }
+        try { return DatabaseReadRetry.scope(() -> execute(request, preview)); }
         finally { reportSlots.release(); }
     }
 
@@ -68,7 +69,8 @@ public class ReportEngineServiceImpl implements ReportEngineService {
                 base.getTableName(), sourceColumns.get(baseAlias), base.getFilterColumn(), params.hasValue("fromDate"));
         try {
             NamedParameterJdbcTemplate jdbc = registry.getJdbc(base.getDbId());
-            List<Map<String, Object>> rawRows = ReportQueries.query(jdbc, sql, params, sqlBuilder.rowMapper(registry.getDatabaseType(base.getDbId())));
+            List<Map<String, Object>> rawRows = ReportQueries.query(base.getDbId(), registry.getDatabaseLabel(base.getDbId()), jdbc,
+                    sql, params, sqlBuilder.rowMapper(registry.getDatabaseType(base.getDbId())));
             checkLimit(rawRows.size());
             List<Map<String, Object>> rows = new ArrayList<>();
             for (Map<String, Object> raw : rawRows) {
@@ -186,7 +188,7 @@ public class ReportEngineServiceImpl implements ReportEngineService {
         for (int i = 0; i < keys.size(); i += batchSize) {
             List<Object> batch = keys.subList(i, Math.min(i + batchSize, keys.size()));
             ReportCancellation.check();
-            List<Map<String, Object>> targetRows = ReportQueries.query(jdbc, sql,
+            List<Map<String, Object>> targetRows = ReportQueries.query(join.getDbId(), registry.getDatabaseLabel(join.getDbId()), jdbc, sql,
                     new MapSqlParameterSource().addValue("keys", batch).addValue("rowLimit", maxRows - fetched + 1), sqlBuilder.rowMapper(dbType));
             fetched += targetRows.size();
             checkLimit(fetched);

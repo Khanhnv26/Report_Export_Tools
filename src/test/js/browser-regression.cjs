@@ -21,6 +21,7 @@ async function main() {
     page.setDefaultTimeout(10000);
     const errors=[]; page.on('pageerror',error=>errors.push(error.message)); page.on('dialog',dialog=>{errors.push('Unexpected native '+dialog.type());dialog.dismiss();});
     let previewError=false;
+    let jobPolls=0;
     let submitted;
     await page.route('**/api/**',async route=>{
       const url=new URL(route.request().url()); const body=route.request().postDataJSON(); let data;
@@ -32,9 +33,13 @@ async function main() {
       else if(url.pathname.includes('preview-details')) {
         submitted=body;
         if(previewError){await route.fulfill({status:400,json:{message:'Database thử nghiệm không phản hồi.'}});return;}
-        data={columns:body.outputColumns,rows:[body.outputColumns.map(col=>({'orders.id':'9223372036854775807','orders.amount':'1.234,50','orders.created_at':'06/11/2026 09:30:00'}[col.field]))],warnings:[],sampled:!body.filters.length&&!body.sortField,processedRows:1,elapsedMillis:24};
+        data={columns:body.outputColumns,rows:[body.outputColumns.map(col=>({'orders.id':'9223372036854775807','orders.amount':'1.234,50','orders.created_at':'06/11/2026 09:30:00'}[col.field]))],warnings:[],sampled:!body.filters.length&&!body.sortField,processedRows:1,elapsedMillis:24,recoveryMessages:['Đã tự kết nối lại nguồn Orders (1/1).']};
       } else if(url.pathname==='/api/reports/jobs') data={id:'test-job',state:'QUEUED',message:'Đang chờ đến lượt…',rowCount:0,warnings:[]};
-      else if(url.pathname.endsWith('/jobs/test-job')) data=route.request().method()==='DELETE'?{id:'test-job',state:'CANCELLED',message:'Đã hủy báo cáo.',rowCount:0,warnings:[]}:{id:'test-job',state:'READY',message:'File đã sẵn sàng.',rowCount:1,warnings:['1 dòng kết quả không có dữ liệu từ nguồn CRM.']};
+      else if(url.pathname.endsWith('/jobs/test-job')) {
+        if(route.request().method()==='DELETE') data={id:'test-job',state:'CANCELLED',message:'Đã hủy báo cáo.',rowCount:0,warnings:[]};
+        else if(++jobPolls===1) data={id:'test-job',state:'RECONNECTING',message:'Mất kết nối tới Orders. Đang thử lại 1/1.',rowCount:0,warnings:[]};
+        else data={id:'test-job',state:'READY',message:'File đã sẵn sàng.',rowCount:1,warnings:['1 dòng kết quả không có dữ liệu từ nguồn CRM.'],recoveryMessages:['Đã tự kết nối lại nguồn Orders và đọc lại truy vấn (1/1).']};
+      }
       else {await route.fulfill({status:404,json:{message:'Unknown fixture route'}});return;}
       await route.fulfill({json:{status:200,data}});
     });
@@ -57,7 +62,9 @@ async function main() {
     assert.equal(submitted.outputColumns[0].field,'orders.amount'); assert.equal(submitted.sortField,'orders.amount');
     await page.screenshot({path:path.join(output,'preview-desktop.png'),fullPage:true});
     await page.getByRole('button',{name:'Tạo file Excel',exact:true}).click();
+    await page.getByText('Đang kết nối lại',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Tải file Excel',exact:true}).waitFor();
+    await page.getByText('Đã tự kết nối lại nguồn Orders và đọc lại truy vấn (1/1).',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Tải file Excel',exact:true}).click();
     await page.getByRole('dialog').getByRole('heading',{name:'Kiểm tra cảnh báo trước khi tải'}).waitFor();
     await page.keyboard.press('Escape');

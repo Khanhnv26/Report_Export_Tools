@@ -3,6 +3,7 @@ package com.report.tool.controller;
 import com.report.tool.dto.request.ReportConfigRequest;
 import com.report.tool.dto.request.ReportConfigRequest.OutputColumn;
 import com.report.tool.dto.response.ApiResponse;
+import com.report.tool.helper.DatabaseReadRetry;
 import com.report.tool.service.ReportEngineService;
 import com.report.tool.service.ReportJobService;
 import com.report.tool.service.ReportOutputService;
@@ -40,16 +41,18 @@ public class ReportWorkspaceController {
     private final ReportJobService jobs;
 
     public record Preview(List<OutputColumn> columns, List<List<String>> rows, List<String> warnings,
-                          boolean sampled, int processedRows, long elapsedMillis) { }
+                          boolean sampled, int processedRows, long elapsedMillis, List<String> recoveryMessages) { }
 
     @PostMapping("/preview-details")
     public ApiResponse<Preview> preview(@RequestBody ReportConfigRequest request) {
-        long start = System.nanoTime();
-        boolean full = output.needsFullRead(request);
-        List<Map<String, Object>> rows = full ? engine.executeReport(request) : engine.previewReport(request);
-        ReportOutputService.PreparedReport prepared = output.prepare(request, rows);
-        return ApiResponse.success(new Preview(prepared.columns(), workbooks.preview(request, prepared), prepared.warnings(),
-                !full, prepared.rows().size(), (System.nanoTime() - start) / 1000000));
+        return DatabaseReadRetry.scope(() -> {
+            long start = System.nanoTime();
+            boolean full = output.needsFullRead(request);
+            List<Map<String, Object>> rows = full ? engine.executeReport(request) : engine.previewReport(request);
+            ReportOutputService.PreparedReport prepared = output.prepare(request, rows);
+            return ApiResponse.success(new Preview(prepared.columns(), workbooks.preview(request, prepared), prepared.warnings(),
+                    !full, prepared.rows().size(), (System.nanoTime() - start) / 1000000, DatabaseReadRetry.recoveryMessages()));
+        });
     }
 
     @PostMapping("/jobs")

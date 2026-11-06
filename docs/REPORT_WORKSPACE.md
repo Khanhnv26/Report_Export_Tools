@@ -49,6 +49,17 @@ Phép đo dữ liệu giả 50.000 dòng × 3 cột trên máy phát triển: kh
 
 ## Thông báo và kiểm thử
 
+### Tự kết nối lại khi mất phiên
+
+- Mỗi preview/export có một lượt thử lại dùng chung cho toàn bộ truy vấn và lô ghép; mỗi request đọc bảng/cột có giới hạn riêng một lượt. Chờ khoảng 500 ms trước lần thử lại.
+- Chỉ thử lại với lỗi kết nối đã nhận diện bằng kiểu lỗi JDBC, SQLState hoặc lỗi socket. Sai mật khẩu, mật khẩu hết hạn, thiếu quyền, sai SQL, nguồn không tồn tại, query timeout và hủy tác vụ không được thử lại. Mã lỗi chưa xác định mặc định không retry.
+- Connection hỏng bị loại khỏi pool; connection mới dùng thông tin xác thực của phiên tool hiện tại. Không đóng toàn bộ pool, không lưu thêm mật khẩu và không tự đổi mật khẩu/token.
+- Kết quả đọc dở bị bỏ. Chỉ truy vấn hoặc lô đang lỗi được đọc lại; các lô đã xong không chạy lại. Nếu vẫn mất kết nối hoặc lượt retry đã dùng hết, tác vụ dừng và không có file tải chưa hoàn chỉnh.
+- Export có trạng thái “Đang kết nối lại”; thông tin phục hồi được giữ trên tác vụ sau khi thành công. Preview trả thông tin phục hồi cùng kết quả sau khi request hoàn tất. Nút hủy có hiệu lực cả khi chờ retry.
+- Không có snapshot liên database: dữ liệu tại nguồn có thể thay đổi trong khoảng thử lại.
+
+Quy tắc nhận diện dựa trên [SQLState PostgreSQL](https://www.postgresql.org/docs/current/errcodes-appendix.html) và hợp đồng [SQLRecoverableException của JDBC](https://docs.oracle.com/en/java/javase/21/docs/api/java.sql/java/sql/SQLRecoverableException.html). Các lỗi cấu hình/xác thực đặc thù như [Oracle hết hạn mật khẩu](https://docs.oracle.com/en/error-help/db/ora-28001/) và [service không được listener nhận diện](https://docs.oracle.com/en/error-help/db/ora-12514/) được loại trừ theo mã lỗi.
+
 Ứng dụng dùng toast, lỗi tại trường nhập và hộp thoại riêng. Không gọi `window.alert`, `window.confirm`, `window.prompt`. Hộp thoại hỗ trợ Escape, giữ focus trong hộp và trả focus khi đóng. Java dùng kiểu tường minh; JavaScript của ứng dụng dùng `const`/`let`.
 
 ```powershell

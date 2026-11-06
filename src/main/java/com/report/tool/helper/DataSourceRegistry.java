@@ -208,6 +208,11 @@ public class DataSourceRegistry {
         return config.getDbType();
     }
 
+    public String getDatabaseLabel(String dbId) {
+        DBConnectionRequest config = savedConfigs.get(dbId);
+        return config == null || config.getName() == null || config.getName().isBlank() ? dbId : config.getName();
+    }
+
     public String getDatabaseSchema(String dbId) {
         DBConnectionRequest config = savedConfigs.get(dbId);
         if (config == null) throw new DatabaseNotFoundException(dbId);

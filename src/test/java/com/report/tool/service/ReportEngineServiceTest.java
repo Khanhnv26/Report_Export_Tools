@@ -6,6 +6,10 @@ import com.report.tool.dto.request.ReportConfigRequest.JoinTable;
 import com.report.tool.exception.InvalidReportConfigException;
 import com.report.tool.helper.DataSourceRegistry;
 import com.report.tool.helper.SqlBuilder;
+import com.report.tool.exception.DatabaseReadConnectionException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import java.sql.SQLRecoverableException;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.report.tool.database.DatabaseAdapters;
 import com.report.tool.service.impl.ReportEngineServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -200,5 +204,47 @@ class ReportEngineServiceTest {
         assertThat(engine.executeReport(request)).hasSize(1001)
                 .allSatisfy(row -> assertThat(row.get("crm.name")).isNotNull());
         assertThat(batchSizes).containsExactly(1000, 1);
+    }
+
+    @Test
+    void retriesOnlyTheFailedJoinBatchWithoutReplayingEarlierBatches() {
+        orders.batchUpdate("INSERT INTO orders VALUES (?, ?, NULL)", IntStream.range(0, 1001).mapToObj(id -> new Object[]{id, id}).toList());
+        customers.batchUpdate("INSERT INTO users VALUES (?, NULL, ?)", IntStream.range(0, 1001).mapToObj(id -> new Object[]{id, "User" + id}).toList());
+        AtomicInteger baseQueries = new AtomicInteger(); List<Integer> batches = new ArrayList<>();
+        databases.put("orders_db", new NamedParameterJdbcTemplate(orders) {
+            @Override public <T> T execute(String sql, SqlParameterSource params, PreparedStatementCallback<T> callback) {
+                baseQueries.incrementAndGet(); return super.execute(sql, params, callback);
+            }
+        });
+        databases.put("crm_db", new NamedParameterJdbcTemplate(customers) {
+            @Override public <T> T execute(String sql, SqlParameterSource params, PreparedStatementCallback<T> callback) {
+                batches.add(((List<?>) params.getValue("keys")).size());
+                if (batches.size() == 2) throw new DataAccessResourceFailureException("Lost", new SQLRecoverableException("Closed", "08006"));
+                return super.execute(sql, params, callback);
+            }
+        });
+        ReportConfigRequest config = request(); config.setJoins(List.of(users("crm", "customer_id")));
+        assertThat(engine.executeReport(config)).hasSize(1001).allSatisfy(row -> assertThat(row.get("crm.name")).isNotNull());
+        assertThat(baseQueries.get()).isEqualTo(1); assertThat(batches).containsExactly(1000, 1, 1);
+    }
+
+    @Test
+    void reportCannotRetryAJoinAfterBaseQueryAlreadyConsumedItsRetry() {
+        orders.update("INSERT INTO orders VALUES (1, 7, NULL)");
+        AtomicInteger baseQueries = new AtomicInteger(); AtomicInteger joins = new AtomicInteger();
+        databases.put("orders_db", new NamedParameterJdbcTemplate(orders) {
+            @Override public <T> T execute(String sql, SqlParameterSource params, PreparedStatementCallback<T> callback) {
+                if (baseQueries.incrementAndGet() == 1) throw new DataAccessResourceFailureException("Lost", new SQLRecoverableException("Closed", "08006"));
+                return super.execute(sql, params, callback);
+            }
+        });
+        databases.put("crm_db", new NamedParameterJdbcTemplate(customers) {
+            @Override public <T> T execute(String sql, SqlParameterSource params, PreparedStatementCallback<T> callback) {
+                joins.incrementAndGet(); throw new DataAccessResourceFailureException("Lost", new SQLRecoverableException("Closed", "08006"));
+            }
+        });
+        ReportConfigRequest config = request(); config.setJoins(List.of(users("crm", "customer_id")));
+        assertThatThrownBy(() -> engine.executeReport(config)).isInstanceOf(DatabaseReadConnectionException.class);
+        assertThat(baseQueries.get()).isEqualTo(2); assertThat(joins.get()).isEqualTo(1);
     }
 }
