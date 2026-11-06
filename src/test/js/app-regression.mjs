@@ -47,6 +47,16 @@ app.savedProfiles.legacy={templateId:'sample.xlsx',headerRow:0,baseTable:app.con
 app.selectedProfile='legacy'; await app.loadProfile();
 assert.equal(app.config.outputMode,'TEMPLATE'); assert.equal(app.config.outputColumns[0].field,'owner.name');
 assert.equal(app.config.outputColumns[0].letter,'A');
+const deleteCancel = app.deleteProfile('legacy');
+assert.equal(app.dialog.kind, 'confirm');
+app.closeDialog(false);
+await deleteCancel;
+assert.ok(app.savedProfiles.legacy);
+const deleteConfirm = app.deleteProfile('legacy');
+app.closeDialog(true);
+await deleteConfirm;
+assert.equal(app.savedProfiles.legacy, undefined);
+assert.equal(app.selectedProfile, '');
 assert.doesNotMatch(source,/\b(?:alert|confirm|prompt)\s*\(/);
 assert.doesNotMatch(source,/\bvar\s+/);
 console.log('PASS: catalog, metadata cache, output order, stale-preview protection, custom dialogs, legacy profiles, no window dialogs or var.');

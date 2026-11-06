@@ -17,6 +17,7 @@
         <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
         <label for="profile">Mẫu đã lưu</label><select id="profile" v-model="selectedProfile" @change="loadProfile"><option value="">Chọn mẫu…</option><option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option></select>
         <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
+        <button v-if="selectedProfile" class="wide danger-text" @click="deleteProfile(selectedProfile)">Xóa mẫu này</button>
       </div>
       <div class="sidebar-card">
         <h2>Tiến trình</h2>

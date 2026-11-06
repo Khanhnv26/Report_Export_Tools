@@ -388,6 +388,19 @@ createApp({
         } else if (!config.outputColumns.length) this.syncOutputColumns();
         this.toast(`Đã nạp mẫu “${this.selectedProfile}”.`);
       } catch (error) { this.showError('Chưa nạp đủ cấu hình', error, () => this.loadProfile()); }
+    },
+    async deleteProfile(name) {
+      const target = name || this.selectedProfile;
+      if (!target || !this.savedProfiles[target]) return;
+      if (!await this.ask('Xóa mẫu báo cáo?', `Bạn có chắc muốn xóa mẫu “${target}”? Cấu hình đã lưu sẽ bị gỡ khỏi trình duyệt này.`, { confirm: 'Xóa mẫu', destructive: true })) return;
+      try {
+        const next = { ...this.savedProfiles };
+        delete next[target];
+        this.savedProfiles = next;
+        localStorage.setItem('saved_report_profiles', JSON.stringify(this.savedProfiles));
+        if (this.selectedProfile === target) this.selectedProfile = '';
+        this.toast(`Đã xóa mẫu “${target}”.`);
+      } catch (error) { this.showError('Không xóa được mẫu', error); }
     }
   }
 }).mount('#app');
