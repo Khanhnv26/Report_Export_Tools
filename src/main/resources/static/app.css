@@ -391,6 +391,29 @@ small, .help {
 
 .sidebar-card .section-heading h2 {
   margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.icon-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.icon-refresh-btn:hover {
+  background: #edf2f7;
+  color: var(--accent);
+  border-color: #dce3ed;
 }
 
 .sidebar-card p {
