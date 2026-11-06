@@ -74,7 +74,7 @@
       <section v-if="step===2" aria-label="Cấu hình cột đầu ra">
         <p class="lead">Chọn cấu trúc file, tên cột và cách hiển thị giá trị trong Excel.</p>
         <fieldset class="mode-picker"><legend>Cách xuất</legend><label><input type="radio" value="TABLE" v-model="config.outputMode" @change="changeOutputMode"><span><strong>Bảng Excel mới</strong><small>Tự đặt tiêu đề, thứ tự và định dạng cột.</small></span></label><label><input type="radio" value="TEMPLATE" v-model="config.outputMode" @change="changeOutputMode"><span><strong>Dùng file mẫu</strong><small>Điền vào các cột của sheet đầu tiên.</small></span></label></fieldset>
-        <div v-if="isTemplate" class="template-upload form-grid two">
+        <div v-if="isTemplate" class="template-upload">
           <div class="form-field">
             <label for="template-file-input">File Excel mẫu</label>
             <div class="custom-file-box" :class="{ 'has-file': !!templateFileName }">
