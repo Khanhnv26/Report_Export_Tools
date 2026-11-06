@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Report Workspace</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/app.css">
   <script defer src="/vendor/vue.global.prod.js"></script><script defer src="/app.js"></script>
 </head>
@@ -16,20 +17,12 @@
       <div class="sidebar-card">
         <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
         <label for="profile">Mẫu đã lưu</label>
-        <div class="profile-picker-row">
-          <select id="profile" v-model="selectedProfile" @change="loadProfile">
-            <option value="" disabled :selected="!selectedProfile">-- Chọn mẫu đã lưu --</option>
-            <option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option>
-          </select>
-          <button v-if="selectedProfile" type="button" class="danger-icon-btn" @click="deleteProfile(selectedProfile)" title="Xóa mẫu này" aria-label="Xóa mẫu">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-          </button>
-        </div>
+        <select id="profile" v-model="selectedProfile" @change="loadProfile">
+          <option value="" disabled :selected="!selectedProfile">-- Chọn mẫu đã lưu --</option>
+          <option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option>
+        </select>
         <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
-        <button v-if="selectedProfile" class="wide danger-text" @click="deleteProfile(selectedProfile)">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          Xóa mẫu “{{ selectedProfile }}”
-        </button>
+        <button class="wide" @click="showProfilesModal = true">Quản lý tất cả mẫu ({{ Object.keys(savedProfiles).length }})</button>
       </div>
       <div class="sidebar-card">
         <h2>Tiến trình</h2>
@@ -165,6 +158,53 @@
   <div class="toast-stack" aria-live="polite"><div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.tone"><span>{{ toast.message }}</span><button @click="toasts=toasts.filter(item=>item.id!==toast.id)" aria-label="Đóng thông báo">×</button></div></div>
 
   <div v-if="showConnectModal && !dialog" class="overlay"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="connection-title"><div class="section-heading"><h2 id="connection-title">{{ newDb.id?'Kết nối lại database':'Thêm kết nối' }}</h2><button @click="closeConnection" :disabled="connectLoading" aria-label="Đóng">×</button></div><p class="muted">Dùng tài khoản có quyền SELECT trên các bảng báo cáo.</p><form @submit.prevent="saveNewDatabase" novalidate><label>Tên gợi nhớ<input aria-label="Tên gợi nhớ" @input="delete fieldErrors.name;delete fieldErrors.connection" v-model="newDb.name" autofocus :aria-invalid="!!fieldErrors.name" placeholder="Ví dụ: Dữ liệu đơn hàng"><span class="field-error" v-if="fieldErrors.name">{{ fieldErrors.name }}</span></label><div class="form-grid two"><label>Loại database<select aria-label="Loại database" v-model="newDb.dbType" @change="onDbTypeChange"><option v-for="type in databaseTypes" :key="type.id" :value="type.id">{{ type.name }}</option></select></label><label>Cổng<input type="number" aria-label="Cổng" @input="delete fieldErrors.port;delete fieldErrors.connection" v-model.number="newDb.port" :aria-invalid="!!fieldErrors.port"><span class="field-error" v-if="fieldErrors.port">{{ fieldErrors.port }}</span></label></div><label>Host / IP<input @input="delete fieldErrors.host;delete fieldErrors.connection" v-model="newDb.host" :aria-invalid="!!fieldErrors.host"><span class="field-error" v-if="fieldErrors.host">{{ fieldErrors.host }}</span></label><label>{{ selectedDatabaseType.databaseLabel }}<input :aria-label="selectedDatabaseType.databaseLabel" @input="delete fieldErrors.database;delete fieldErrors.connection" v-model="newDb.database" :aria-invalid="!!fieldErrors.database"><span class="field-error" v-if="fieldErrors.database">{{ fieldErrors.database }}</span></label><label v-if="selectedDatabaseType.supportsSchema">Schema (tùy chọn)<input v-model="newDb.schema" placeholder="Để trống dùng schema mặc định của tài khoản"></label><div class="form-grid two"><label>Tài khoản<input aria-label="Tài khoản" @input="delete fieldErrors.username;delete fieldErrors.connection" v-model="newDb.username" autocomplete="username" :aria-invalid="!!fieldErrors.username"><span class="field-error" v-if="fieldErrors.username">{{ fieldErrors.username }}</span></label><label>Mật khẩu<input type="password" v-model="newDb.password" autocomplete="off"></label></div><p v-if="fieldErrors.connection" class="notice error" role="alert">{{ fieldErrors.connection }}</p><div class="modal-actions"><button type="button" @click="closeConnection" :disabled="connectLoading">Hủy</button><button type="submit" class="primary" :disabled="connectLoading || !databaseTypes.length">{{ connectLoading?'Đang kiểm tra kết nối…':'Kiểm tra & lưu kết nối' }}</button></div></form></section></div>
+  <div v-if="showProfilesModal && !dialog" class="overlay" @click.self="showProfilesModal = false">
+    <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="profiles-modal-title">
+      <div class="section-heading">
+        <h2 id="profiles-modal-title">Quản lý mẫu báo cáo đã lưu</h2>
+        <button @click="showProfilesModal = false" aria-label="Đóng">×</button>
+      </div>
+      <p class="muted">Các mẫu được lưu trên trình duyệt này để bạn tái sử dụng nhanh.</p>
+      <div v-if="!Object.keys(savedProfiles).length" class="empty-preview" style="margin:20px 0">
+        <h2>Chưa có mẫu nào</h2>
+        <p>Thiết lập các bước báo cáo rồi bấm “Lưu cấu hình thành mẫu” để lưu.</p>
+      </div>
+      <div v-else class="table-wrap" style="margin:16px 0; max-height:420px">
+        <table>
+          <thead>
+            <tr>
+              <th>Tên mẫu</th>
+              <th>Chế độ</th>
+              <th style="text-align:right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(profile, name) in savedProfiles" :key="name">
+              <td>
+                <strong>{{ name }}</strong>
+                <small v-if="profileColumnsCount(profile)">{{ profileColumnsCount(profile) }} cột</small>
+              </td>
+              <td>
+                <span class="status" :class="profileModeClass(profile)">{{ profileModeLabel(profile) }}</span>
+              </td>
+              <td style="text-align:right">
+                <div class="button-group" style="justify-content:flex-end">
+                  <button class="primary" @click="loadProfileByName(name)">Nạp</button>
+                  <button @click="renameProfile(name)">Đổi tên</button>
+                  <button class="danger-text" @click="deleteProfile(name)">Xóa</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <span class="muted" style="margin-right:auto">Tổng cộng: {{ Object.keys(savedProfiles).length }} mẫu đã lưu</span>
+        <button @click="showProfilesModal = false">Đóng</button>
+      </div>
+    </section>
+  </div>
+
   <div v-if="dialog" class="overlay"><section class="modal small" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message"><h2 id="dialog-title">{{ dialog.title }}</h2><p id="dialog-message" class="dialog-message">{{ dialog.message }}</p><form v-if="dialog.kind==='input'" @submit.prevent="closeDialog(true)"><label>Tên mẫu<input v-model="dialog.value" autofocus maxlength="100" :aria-invalid="!!dialog.error"></label><p v-if="dialog.error" class="field-error">{{ dialog.error }}</p><div class="modal-actions"><button type="button" @click="closeDialog(false)">Hủy</button><button type="submit" class="primary">{{ dialog.confirm }}</button></div></form><div v-else class="modal-actions"><button autofocus @click="closeDialog(false)">{{ dialog.kind==='error'?'Đóng':'Quay lại' }}</button><button v-if="dialog.kind==='error' && dialog.retry" class="primary" @click="retryDialog">Thử lại</button><button v-if="dialog.kind==='confirm'" :class="dialog.destructive?'danger':'primary'" @click="closeDialog(true)">{{ dialog.confirm }}</button></div></section></div>
 </div>
 <noscript>Hãy bật JavaScript để sử dụng công cụ báo cáo.</noscript>

@@ -11,6 +11,10 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.http.HttpHeaders;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -86,6 +90,23 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class, HttpRequestMethodNotSupportedException.class})
+    public ResponseEntity<ErrorResponse> handleRoutingError(Exception ex, HttpServletRequest request) {
+        HttpStatus status = ex instanceof HttpRequestMethodNotSupportedException ? HttpStatus.METHOD_NOT_ALLOWED : HttpStatus.NOT_FOUND;
+        HttpHeaders headers = new HttpHeaders();
+        if (ex instanceof HttpRequestMethodNotSupportedException methodError && methodError.getSupportedHttpMethods() != null) {
+            headers.setAllow(methodError.getSupportedHttpMethods());
+        }
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(status.value())
+                .error(status.getReasonPhrase())
+                .message(status == HttpStatus.NOT_FOUND ? "Không tìm thấy đường dẫn được yêu cầu." : "Phương thức không được hỗ trợ cho đường dẫn này.")
+                .path(request.getRequestURI())
+                .timestamp(LocalDateTime.now())
+                .build();
+        return ResponseEntity.status(status).headers(headers).body(errorResponse);
     }
 
     @ExceptionHandler(Exception.class)

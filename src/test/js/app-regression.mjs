@@ -6,12 +6,14 @@ let definition;
 let pendingPreview;
 let metadataCalls = 0;
 const store = new Map();
+const requestedUrls = [];
 const sandbox = {
   Vue: { createApp(value) { definition = value; return { mount() {} }; } },
   document: { activeElement: { focus() {} }, querySelector() { return null; } },
   localStorage: { getItem: key => store.get(key) || null, setItem: (key,value) => store.set(key,value), removeItem: key => store.delete(key) },
   AbortController, setTimeout: () => 0, clearTimeout() {},
   fetch: async (url, options) => {
+    requestedUrls.push(url);
     if (url.includes('preview-details')) return new Promise(resolve => { pendingPreview = data => resolve({ ok:true, json:async()=>({data}) }); });
     if (url.endsWith('/columns')) metadataCalls++;
     return { ok:true, json:async()=>({ data:
@@ -47,16 +49,48 @@ app.savedProfiles.legacy={templateId:'sample.xlsx',headerRow:0,baseTable:app.con
 app.selectedProfile='legacy'; await app.loadProfile();
 assert.equal(app.config.outputMode,'TEMPLATE'); assert.equal(app.config.outputColumns[0].field,'owner.name');
 assert.equal(app.config.outputColumns[0].letter,'A');
-const deleteCancel = app.deleteProfile('legacy');
+assert.equal(app.profileMode(app.savedProfiles.legacy), 'TEMPLATE');
+assert.equal(app.profileModeLabel(app.savedProfiles.legacy), 'Theo mẫu template');
+assert.equal(app.profileModeClass(app.savedProfiles.legacy), 'mode-template');
+assert.equal(app.profileColumnsCount(app.savedProfiles.legacy), 1);
+const renameAction = app.renameProfile('legacy');
+app.dialog.value = 'legacy-renamed';
+app.closeDialog(true);
+await renameAction;
+assert.equal(app.savedProfiles.legacy, undefined);
+assert.ok(app.savedProfiles['legacy-renamed']);
+assert.equal(app.selectedProfile, 'legacy-renamed');
+app.showProfilesModal = true;
+await app.loadProfileByName('legacy-renamed');
+assert.equal(app.showProfilesModal, false);
+const deleteCancel = app.deleteProfile('legacy-renamed');
 assert.equal(app.dialog.kind, 'confirm');
 app.closeDialog(false);
 await deleteCancel;
-assert.ok(app.savedProfiles.legacy);
-const deleteConfirm = app.deleteProfile('legacy');
+assert.ok(app.savedProfiles['legacy-renamed']);
+const deleteConfirm = app.deleteProfile('legacy-renamed');
 app.closeDialog(true);
 await deleteConfirm;
-assert.equal(app.savedProfiles.legacy, undefined);
+assert.equal(app.savedProfiles['legacy-renamed'], undefined);
 assert.equal(app.selectedProfile, '');
+const beforeDraft = requestedUrls.length;
+app.savedProfiles.draft = { baseTable: { dbId: '', tableName: '', columns: [] }, joins: [{ dbId: '', tableName: '', columns: [] }] };
+app.selectedProfile = 'draft';
+await app.loadProfile();
+assert.equal(requestedUrls.slice(beforeDraft).some(url => url.includes('/api/databases//')), false, 'draft profiles must not request metadata with an empty database ID');
+assert.ok(app.errors.source, 'incomplete sources must be shown in the interface');
+assert.throws(() => app.sourceUrl({ dbId: '' }), /Chọn/);
+assert.throws(() => app.sourceUrl({ dbId: '   ' }), /Chọn/);
+const beforeTable = requestedUrls.length;
+app.savedProfiles.tableNotSelected = { baseTable: { dbId: 'orders', tableName: '', columns: [] }, joins: [] };
+app.selectedProfile = 'tableNotSelected';
+await app.loadProfile();
+assert.equal(requestedUrls.slice(beforeTable).some(url => url.includes('/tables//columns')), false);
+app.savedProfiles.nullBase = { baseTable: null, joins: null };
+app.selectedProfile = 'nullBase';
+await app.loadProfile();
+assert.equal(app.config.baseTable.dbId, '');
+assert.equal(app.config.joins.length, 0);
 assert.doesNotMatch(source,/\b(?:alert|confirm|prompt)\s*\(/);
 assert.doesNotMatch(source,/\bvar\s+/);
 console.log('PASS: catalog, metadata cache, output order, stale-preview protection, custom dialogs, legacy profiles, no window dialogs or var.');

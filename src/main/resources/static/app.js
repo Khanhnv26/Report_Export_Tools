@@ -12,7 +12,7 @@ createApp({
       savedProfiles: {}, selectedProfile: '', templateFileName: '', excelColumns: [],
       preview: null, previewSignature: '', previewLoading: false, previewRequestId: 0,
       metadataLoading: 0, connectLoading: false, uploadLoading: false, exportLoading: false,
-      job: null, jobSignature: '', jobPollingError: '', jobPollSequence: 0, dialog: null, toasts: [], showConnectModal: false,
+      job: null, jobSignature: '', jobPollingError: '', jobPollSequence: 0, dialog: null, toasts: [], showConnectModal: false, showProfilesModal: false,
       newDb: {}, fieldErrors: {}, errors: {}, draggedColumn: null, sourceSearch: '', outputSearch: '',
       types: [{ id: 'AUTO', label: 'Tự động' }, { id: 'TEXT', label: 'Chữ' }, { id: 'NUMBER', label: 'Số' },
         { id: 'DATE', label: 'Ngày' }, { id: 'DATETIME', label: 'Ngày & giờ' }, { id: 'BOOLEAN', label: 'Đúng / sai' }],
@@ -109,9 +109,12 @@ createApp({
     },
     retryDialog() { const retry = this._retry; this.closeDialog(); if (retry) retry(); },
     onDialogKey(event) {
-      if (!this.dialog && !this.showConnectModal) return;
+      if (!this.dialog && !this.showConnectModal && !this.showProfilesModal) return;
       if (event.key === 'Escape') {
-        event.preventDefault(); if (this.dialog) this.closeDialog(); else if (!this.connectLoading) this.closeConnection();
+        event.preventDefault();
+        if (this.dialog) this.closeDialog();
+        else if (this.showProfilesModal) this.showProfilesModal = false;
+        else if (!this.connectLoading) this.closeConnection();
       }
       if (event.key === 'Tab') {
         const modal = document.querySelector('[role="dialog"]');
@@ -140,7 +143,10 @@ createApp({
       try { return await request; }
       finally { this.metadataLoading--; if (this._metadataRequests.get(url) === request) this._metadataRequests.delete(url); }
     },
-    sourceUrl(source) { return `/api/databases/${encodeURIComponent(source.dbId)}/tables`; },
+    sourceUrl(source) {
+      if (!source || typeof source.dbId !== 'string' || !source.dbId.trim()) throw new Error('Chọn kết nối database trước khi tải cấu trúc nguồn.');
+      return `/api/databases/${encodeURIComponent(source.dbId)}/tables`;
+    },
     async onBaseDbChange() {
       const base = this.config.baseTable; const id = base.dbId;
       base.tableName = ''; base.columns = []; this.baseTables = []; this.baseColumns = [];
@@ -375,19 +381,79 @@ createApp({
     async loadProfile() {
       const saved = this.savedProfiles[this.selectedProfile]; if (!saved) return;
       const config = { ...emptyConfig(), ...copy(saved) };
+      config.baseTable = { ...emptyConfig().baseTable, ...config.baseTable };
+      config.baseTable.columns = Array.isArray(config.baseTable.columns) ? config.baseTable.columns : [];
+      config.joins = Array.isArray(config.joins) ? config.joins.map(join => ({ dbId: '', tableName: '', columns: [], ...join })) : [];
       if (!saved.outputMode) config.outputMode = saved.templateId ? 'TEMPLATE' : 'TABLE';
-      this.config = config; this.preview = null; this.excelColumns = []; this.step = 1;
+      this.config = config; this.preview = null; this.excelColumns = []; this.baseTables = []; this.baseColumns = []; this.errors = {}; this.step = 1;
       try {
-        const load = async source => ({ tables: await this.metadata(this.sourceUrl(source)),
-          columns: await this.metadata(`${this.sourceUrl(source)}/${encodeURIComponent(source.tableName)}/columns`) });
-        const base = await load(config.baseTable); this.baseTables = base.tables; this.baseColumns = base.columns;
-        await Promise.all(config.joins.map(async join => { const data = await load(join); join.availableTables = data.tables; join.availableColumns = data.columns; }));
+        const incomplete = [];
+        const load = async (source, label) => {
+          if (typeof source.dbId !== 'string' || !source.dbId.trim()) {
+            source.columns = []; incomplete.push(`${label}: chưa chọn kết nối database.`);
+            return { tables: [], columns: [] };
+          }
+          const tables = await this.metadata(this.sourceUrl(source));
+          if (typeof source.tableName !== 'string' || !source.tableName.trim() || !tables.includes(source.tableName)) {
+            source.columns = []; incomplete.push(`${label}: chọn bảng còn tồn tại trong nguồn.`);
+            return { tables, columns: [] };
+          }
+          return { tables, columns: await this.metadata(`${this.sourceUrl(source)}/${encodeURIComponent(source.tableName)}/columns`) };
+        };
+        const base = await load(config.baseTable, 'Bảng gốc'); this.baseTables = base.tables; this.baseColumns = base.columns;
+        await Promise.all(config.joins.map(async (join, index) => {
+          const data = await load(join, `Bảng phụ ${index + 1}`); join.availableTables = data.tables; join.availableColumns = data.columns;
+        }));
         if (config.outputMode === 'TEMPLATE') {
           if (!config.outputColumns.length) config.outputColumns = Object.entries(config.mapping || {}).filter(([, field]) => field).map(([letter, field]) => ({ letter, field, type: 'AUTO', format: 'GENERAL' }));
-          this.templateFileName = config.templateId; await this.refreshHeaders();
+          this.templateFileName = config.templateId || '';
+          if (config.templateId) await this.refreshHeaders(); else this.errors.template = 'Chọn file template để hoàn thiện mẫu báo cáo.';
         } else if (!config.outputColumns.length) this.syncOutputColumns();
-        this.toast(`Đã nạp mẫu “${this.selectedProfile}”.`);
+        if (incomplete.length) {
+          this.errors.source = incomplete.join(' ');
+          this.toast('Đã mở mẫu chưa hoàn chỉnh. Hãy chọn các nguồn còn thiếu ở bước 1.', 'info');
+        } else this.toast(`Đã nạp mẫu “${this.selectedProfile}”.`);
       } catch (error) { this.showError('Chưa nạp đủ cấu hình', error, () => this.loadProfile()); }
+    },
+    profileMode(profile) {
+      return (profile && (profile.outputMode === 'TEMPLATE' || (!profile.outputMode && profile.templateId))) ? 'TEMPLATE' : 'TABLE';
+    },
+    profileModeLabel(profile) {
+      return this.profileMode(profile) === 'TEMPLATE' ? 'Theo mẫu template' : 'Bảng Excel mới';
+    },
+    profileModeClass(profile) {
+      return this.profileMode(profile) === 'TEMPLATE' ? 'mode-template' : 'mode-table';
+    },
+    profileColumnsCount(profile) {
+      if (!profile) return 0;
+      if (Array.isArray(profile.outputColumns) && profile.outputColumns.length) return profile.outputColumns.length;
+      if (profile.mapping && Object.keys(profile.mapping).length) return Object.keys(profile.mapping).length;
+      if (profile.baseTable && Array.isArray(profile.baseTable.columns) && profile.baseTable.columns.length) return profile.baseTable.columns.length;
+      return 0;
+    },
+    async loadProfileByName(name) {
+      if (!name || !this.savedProfiles[name]) return;
+      this.selectedProfile = name;
+      this.showProfilesModal = false;
+      await this.loadProfile();
+    },
+    async renameProfile(oldName) {
+      if (!oldName || !this.savedProfiles[oldName]) return;
+      const newName = await this.ask('Đổi tên mẫu báo cáo', `Nhập tên mới cho mẫu “${oldName}”:`, { input: true, value: oldName, confirm: 'Lưu tên' });
+      if (!newName || newName === oldName) return;
+      if (Object.prototype.hasOwnProperty.call(this.savedProfiles, newName)) {
+        if (!await this.ask('Ghi đè mẫu?', `Mẫu “${newName}” đã có. Bạn muốn ghi đè bằng mẫu này?`, { confirm: 'Ghi đè' })) return;
+      }
+      try {
+        const next = { ...this.savedProfiles };
+        const data = next[oldName];
+        delete next[oldName];
+        next[newName] = data;
+        this.savedProfiles = next;
+        localStorage.setItem('saved_report_profiles', JSON.stringify(this.savedProfiles));
+        if (this.selectedProfile === oldName) this.selectedProfile = newName;
+        this.toast(`Đã đổi tên mẫu thành “${newName}”.`);
+      } catch (error) { this.showError('Không đổi tên được mẫu', error); }
     },
     async deleteProfile(name) {
       const target = name || this.selectedProfile;

@@ -808,39 +808,6 @@ main.sources-page {
   white-space: nowrap;
 }
 
-.profile-picker-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.profile-picker-row select {
-  flex: 1;
-  min-width: 0;
-}
-
-.danger-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 39px;
-  height: 39px;
-  min-height: 39px;
-  flex-shrink: 0;
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #dc2626;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
-}
-
-.danger-icon-btn:hover {
-  background: #fee2e2;
-  border-color: #f87171;
-  color: #b91c1c;
-}
-
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);
@@ -1147,6 +1114,18 @@ tbody tr:hover {
   animation: statusGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+.status.mode-table {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: #d2e1f7;
+}
+
+.status.mode-template {
+  background: #fff4dc;
+  color: #84631e;
+  border-color: #fae2b1;
+}
+
 @keyframes statusGlow {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.68; }
@@ -1195,6 +1174,10 @@ tbody tr:hover {
 
 .modal.small {
   width: min(480px, 100%);
+}
+
+.modal.wide {
+  width: min(720px, 100%);
 }
 
 .modal h2 {
