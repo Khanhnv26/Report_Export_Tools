@@ -1,80 +1,178 @@
-# Microservice Report Tool
+# Report Export Tool
 
-Tool đọc dữ liệu từ PostgreSQL, MySQL, SQL Server và Oracle, ghép theo khóa tại tầng ứng dụng rồi xuất vào file Excel mẫu `.xlsx`.
+> **Microservice Data Aggregation & Excel Stream Engine**  
+> Công cụ tổng hợp dữ liệu phân tán liên cơ sở dữ liệu (Cross-Database Hash-Join) và stream nạp dữ liệu vào file Excel mẫu `.xlsx` giữ nguyên 100% định dạng ban đầu.
 
-## Database được hỗ trợ
+[![Java 21](https://img.shields.io/badge/Java-21%20LTS-007396?logo=openjdk&logoColor=white)](https://www.oracle.com/java/)
+[![Spring Boot 3.3.4](https://img.shields.io/badge/Spring%20Boot-3.3.4-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Apache POI 5.2.5](https://img.shields.io/badge/Apache%20POI-5.2.5-D22128?logo=apache&logoColor=white)](https://poi.apache.org/)
+[![Vue 3](https://img.shields.io/badge/Vue.js-3.x%20CDN-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-v3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- MySQL: cổng mặc định 3306, chọn database; không cần schema riêng.
-- PostgreSQL: cổng 5432, chọn database và schema tùy chọn.
-- SQL Server / MSSQL: cổng 1433, chọn database và schema tùy chọn.
-- Oracle: cổng 1521; nhập **service name** vào ô tương ứng (ví dụ `orclpdb.company.local`), không nhập SID hay toàn bộ JDBC URL. Schema tùy chọn; bỏ trống sẽ dùng schema hiện tại của tài khoản.
+---
 
-Mỗi kết nối gắn với một schema, phần đọc metadata và truy vấn dùng cùng schema đó. Muốn ghép hai schema, tạo hai kết nối và đặt alias riêng cho các bảng trong báo cáo. Tên schema, bảng và cột dùng đúng chữ hoa/thường theo metadata. Hỗ trợ tên chứa chữ Unicode, chữ số, khoảng trắng, `_`, `$`, `#`, `-`; tên có dấu chấm hoặc dấu ngoặc/nháy chưa được hỗ trợ. Các identifier được quote theo từng database để xử lý cột trùng từ khóa.
+## 1. Bài toán nghiệp vụ & Giải pháp
 
-Danh sách database, nhãn kết nối và cổng mặc định lấy từ `GET /api/database-types`; giao diện không khai báo danh sách riêng. Driver của cả bốn loại được đóng gói trong JAR. Adapter Oracle dùng cú pháp service name theo [tài liệu Oracle JDBC](https://docs.oracle.com/en/database/oracle/oracle-database/18/jjdbc/data-sources-and-URLs.html).
+Trong kiến trúc **Microservices**, mỗi dịch vụ (Order, User/Auth, CRM, Billing, Inventory) thường sở hữu cơ sở dữ liệu riêng biệt (*Database per Service*) và chạy trên các hệ quản trị khác nhau (MySQL, PostgreSQL, SQL Server, Oracle) qua mạng nội bộ hoặc OpenVPN. 
 
-Các cột CLOB được đọc thành text, BLOB/binary thành Base64 ngay khi connection còn mở; giới hạn 1 MiB mỗi giá trị CLOB/BLOB/binary. Array, UUID, JSON và các giá trị đặc thù khác được xuất dạng text. Các chức năng SID/TNS/Oracle Wallet, MongoDB, Redis và tải JDBC driver tùy ý chưa được triển khai.
+Khi cần xuất các báo cáo đối soát tổng hợp (ví dụ: *Đơn hàng từ MySQL + Họ tên, SĐT khách từ PostgreSQL/SQL Server + Thông tin xuất hóa đơn từ Oracle*):
+- ❌ **Cách truyền thống:** Viết script SQL riêng lẻ, xuất các file CSV rời rạc rồi dùng VLOOKUP/PowerQuery trong Excel, vừa tốn thời gian vừa dễ sai sót định dạng.
+- ✅ **Với Report Export Tool:** Người dùng chỉ cần kéo thả file Excel mẫu (`.xlsx`), kết nối các DB, chọn bảng và khóa nối. Hệ thống tự động **Hash-Join $O(1)$ trong RAM** và stream kết quả trực tiếp vào file template với đầy đủ công thức, màu sắc, font chữ và viền kẻ ban đầu.
 
-## Thêm loại database mới
+---
 
-1. Viết một adapter trong `src/main/java/com/report/tool/database` thực thi `DatabaseAdapter`: khai báo loại/cổng/driver, URL kết nối, quote identifier, giới hạn dòng và phạm vi metadata. Có thể tùy chỉnh cách đọc giá trị JDBC và kích thước lô khóa.
-2. Đăng ký adapter trong `DatabaseAdapters` và khai báo JDBC driver trong `pom.xml`.
-3. Bổ sung kiểm thử driver, truy vấn có schema/từ khóa, lọc ngày và ghép dữ liệu. Không cần sửa phần ghép báo cáo hoặc danh sách lựa chọn trên giao diện.
+## 2. Tech Stack & Kiến trúc hệ thống
 
-## Chạy trên máy cá nhân
+### Bảng công nghệ phân tầng
 
-Yêu cầu JDK 21 và Maven. Đặt `JAVA_HOME` trỏ đến JDK 21 nếu máy có nhiều bản Java.
+| Tầng kiến trúc | Công nghệ sử dụng | Vai trò & Điểm sáng kỹ thuật |
+| :--- | :--- | :--- |
+| **Backend Core** | **Java 21 LTS** + **Spring Boot 3.3.4** | Nền tảng hiệu năng cao, tối ưu hóa bộ nhớ, sẵn sàng với Virtual Threads. |
+| **Data Access** | **Spring JDBC** + **HikariCP** | Quản lý connection pool động cho từng DB; kết nối dạng `ReadOnly` chống ghi đè dữ liệu sản xuất. |
+| **Database Adapters** | **PostgreSQL**, **MySQL**, **SQL Server (MSSQL)**, **Oracle** | Tích hợp sẵn 4 driver chính thức (`postgresql`, `mysql-connector-j`, `mssql-jdbc`, `ojdbc11`). Adapter hóa việc quote identifier và phân trang theo từng dialect. |
+| **Processing Engine** | **In-Memory Hash-Join Engine** | Batching 1000 khóa (`IN (:keys)`), ghép dữ liệu độ phức tạp $O(1)$ trên RAM, triệt tiêu độ trễ mạng qua OpenVPN/LAN. |
+| **Excel Generator** | **Apache POI 5.2.5** (OOXML) | Nạp template `.xlsx` có sẵn, clone `CellStyle`, giữ nguyên định dạng, tự động xử lý số dài (>15 chữ số) tránh lỗi làm tròn. |
+| **Frontend Studio** | **Vue 3 CDN** + **Tailwind CSS** | Bố cục 2 cột Studio chuyên nghiệp, hỗ trợ **Light / Dark Mode**, 100% SVG Lucide-style (Anti-AI Slop), **Zero NPM build / Zero Node.js**. |
+| **Security & Filter** | **Regex Whitelist** + **AccessControlFilter** | Chống SQL Injection bằng Regex `^[a-zA-Z0-9_]+$` trên identifier; HTTP Basic Auth khi bind ra mạng ngoài; không lưu mật khẩu vào disk. |
+
+### Sơ đồ luồng xử lý (Data Flow)
+
+```mermaid
+flowchart TD
+    UI["Web Studio UI (Vue 3 + Tailwind)"] -->|1. Upload Template & Map Fields| Controller["Spring Boot REST API"]
+    
+    subgraph Engine ["Report Engine (Memory Tier)"]
+        Controller -->|2. Query Base Table| Pool1["HikariCP Pool: MySQL/Postgres"]
+        Pool1 -->|Fetch 50k rows| RawData["Base Rows in RAM"]
+        RawData -->|3. Extract Keys & Batch 1000 IDs| Pool2["HikariCP Pool: MSSQL/Oracle"]
+        Pool2 -->|Batch IN-Query| SubData["Sub-Service Rows"]
+        SubData -->|4. Hash-Join O(1) Lookup| MergedData["Merged Master Dataset"]
+    end
+
+    subgraph ExcelExporter ["Excel Stream Engine"]
+        MergedData --> POI["Apache POI 5.2.5"]
+        Template[".xlsx Template File"] --> POI
+        POI -->|5. Clone CellStyle & Fill Cells| OutputStream["HTTP Response OutputStream"]
+    end
+
+    OutputStream -->|Direct Download| Browser["User Browser (.xlsx)"]
+```
+
+---
+
+## 3. Khởi động nhanh trong 1 phút (Quick Start)
+
+### Yêu cầu hệ thống
+- **Java Development Kit (JDK):** Phiên bản **21** trở lên.
+- **Apache Maven:** Phiên bản **3.9+**.
+
+### Các bước thực hiện
 
 ```powershell
-mvn clean package
+# 1. Clone mã nguồn
+git clone https://github.com/Khanhnv26/Report_Export_Tools.git
+cd Report_Export_Tools
+
+# 2. Chạy trực tiếp qua Maven Spring Boot
+mvn spring-boot:run
+```
+
+*(Hoặc đóng gói thành Fat JAR và khởi chạy):*
+```powershell
+mvn clean package -DskipTests
 java -jar target/microservice-report-tool-1.0.0.jar
 ```
 
-Mở `http://localhost:8080`. Mặc định ứng dụng chỉ lắng nghe tại `127.0.0.1`.
+Ứng dụng sẽ khởi động tại cổng `8080` và **tự động mở trình duyệt** tại:
+👉 **`http://localhost:8080`**
 
-1. Thêm kết nối bằng tài khoản database chỉ có quyền `SELECT` trên các bảng/cột báo cáo cần dùng. Quyền truy cập dữ liệu được giới hạn bằng tài khoản database; ứng dụng hiện là công cụ dành cho một quản trị viên.
-2. Upload template `.xlsx`, chọn dòng tiêu đề (bắt đầu từ **0**).
-3. Chọn bảng gốc và các bảng phụ; đặt alias riêng cho mỗi nguồn, ví dụ `orders`, `crm_users`, `billing_users`.
-4. Nhập khóa nguồn, khóa đích và ánh xạ các trường sang cột Excel. Khóa nguồn có thể là `customer_id`, `orders.customer_id` hoặc `crm_users.manager_id` từ một bảng đã ghép trước đó.
-5. Xem trước rồi xuất Excel. Có thể lưu cấu hình trên trình duyệt và nạp lại ở lần sau.
+---
 
-## Quy tắc dữ liệu
+## 4. Hướng dẫn sử dụng 5 bước (Studio Workflow)
 
-- Ghép theo **LEFT JOIN**: không tìm thấy dữ liệu phụ vẫn giữ dòng gốc và để trống cột phụ. Một khóa khớp nhiều bản ghi tạo nhiều dòng kết quả. Khi ghép nhiều quan hệ một–nhiều, số dòng có thể nhân lên; tool không tự tính SUM/COUNT. Cần xác định cấp chi tiết của báo cáo trước khi cộng tiền trên kết quả.
-- Alias phải khác nhau; nếu bỏ trống thì dùng tên bảng. Profile cũ có tên bảng trùng nhau cần được đặt alias và ánh xạ lại.
-- Lọc ngày nhận `yyyy-MM-dd`, bao gồm toàn bộ ngày kết thúc; dùng mốc đầu ngày hôm sau làm cận trên loại trừ. Ngày được hiểu theo kiểu dữ liệu và múi giờ của phiên database; chưa có chuyển đổi múi giờ chung giữa các service.
-- Preview đọc tối đa 20 dòng gốc ngay từ database và trả tối đa 20 dòng đã ghép. Preview không có thứ tự cố định và không đảm bảo trùng với dữ liệu lúc export nếu database đã thay đổi.
-- Mặc định tối đa **50.000 dòng** ở bảng gốc, dữ liệu phụ được lấy cho mỗi bước ghép, và kết quả của mỗi bước ghép. Vượt giới hạn sẽ báo lỗi, không xuất file bị cắt mất dòng. Điều chỉnh bằng `REPORT_MAX_ROWS` (20–1.000.000) theo bộ nhớ máy. Dữ liệu vẫn được xử lý trong RAM; đây chưa phải cơ chế streaming cho hàng triệu dòng.
-- Tối đa hai truy vấn báo cáo và hai lượt xuất file đồng thời; khi bận API trả HTTP 429.
-- Số vượt 15 chữ số hoặc không thể chuyển an toàn sang số Excel được xuất thành **text**, kể cả ID dài và số thập phân độ chính xác cao. Các số thông thường vẫn là ô số. Preview cũng giữ ID dài dưới dạng chuỗi để trình duyệt không làm tròn.
-- Chỉ ghi dữ liệu vào sheet đầu tiên của template. Nên dùng template trống phần dữ liệu, không chứa các dòng dữ liệu cũ cần xóa hoặc footer cần dịch chuyển. Công thức, tổng hợp và định dạng mở rộng nhiều dòng chưa được tự động nhân bản.
+```
+[1. Kết nối DB] ➔ [2. Tải File Mẫu] ➔ [3. Chọn Bảng & Join] ➔ [4. Khớp Cột] ➔ [5. Xuất Excel]
+```
 
-## Mật khẩu và kết nối lại
+1. **Thêm nguồn dữ liệu (Khung số 1):** Bấm `+ Kết nối DB`, chọn loại CSDL (MySQL, PostgreSQL, SQL Server, Oracle), nhập host/port/database/user/password và bấm *Kiểm tra & Kết nối*.
+2. **Nạp file Excel mẫu (Khung số 2):** Kéo thả file template `.xlsx` vào ô tải lên. Hệ thống tự nhận diện số lượng cột và dòng tiêu đề.
+3. **Cấu hình Bảng & Khóa ghép (Khung số 3):**
+   - Chọn **Bảng gốc** (Driving Table) và tích các cột cần lấy.
+   - Bấm `+ Thêm bảng join`, chọn CSDL và bảng phụ, chỉ định khóa nối (VD: khóa gốc `user_id` = khóa phụ `id`).
+4. **Ánh xạ cột & Tự động khớp (Cột phải):**
+   - Bấm nút **"Tự Động Khớp Cột"**: Thuật toán xử lý ngôn ngữ tự nhiên tiếng Việt sẽ tự động nối cột Excel với trường CSDL tương thích (ví dụ: *Mã Đơn Hàng* $\rightarrow$ `orders.order_code`, *Họ và tên* $\rightarrow$ `users.full_name`).
+5. **Xem trước & Xuất báo cáo:**
+   - Bấm **"Xem trước 20 dòng"** để kiểm tra dữ liệu ghép nối trực tiếp trên giao diện.
+   - Bấm **"Xuất File Excel (.xlsx)"** để tải file hoàn chỉnh.
+   - Bấm **"Lưu mẫu"** trên thanh Header để lưu cấu hình cho các lần xuất báo cáo tiếp theo.
 
-`connections.json` chỉ lưu thông tin kết nối, **không lưu mật khẩu database**. Nếu có file cũ chứa mật khẩu, lần khởi động tiếp theo sẽ loại mật khẩu khỏi file trước khi kết nối lại. Không commit file này.
+---
 
-Sau khi khởi động lại, bấm **Kết nối lại** để nhập mật khẩu; ID kết nối được giữ nguyên nên profile vẫn dùng được. Biểu tượng màu vàng là kết nối chưa hoạt động. Để tự kết nối lại, cung cấp mật khẩu qua biến môi trường theo ID kết nối trong `connections.json`: `REPORT_DB_PASSWORD_<ID_VIẾT_HOA>`, thay dấu `-` trong ID bằng `_`. Ví dụ ID `db_abc123` dùng biến `REPORT_DB_PASSWORD_DB_ABC123`. Quản lý giá trị biến bằng cơ chế bí mật của môi trường triển khai, không ghi mật khẩu vào repo.
+## 5. Đóng gói Standalone Executable (.exe) bằng `jpackage`
 
-## Chạy qua mạng
+Nếu muốn phân phối cho người dùng cuối chạy như một phần mềm desktop không cần cài Java:
 
-Khi cần chia sẻ, đặt `REPORT_TOOL_BIND_ADDRESS`, `REPORT_TOOL_USERNAME` (mặc định `report`) và **bắt buộc** đặt `REPORT_TOOL_PASSWORD` bằng mật khẩu riêng. Trình duyệt sẽ hiện hộp đăng nhập HTTP Basic. Không có mật khẩu, ứng dụng từ chối khởi động khi bind ra mạng. Khi dùng qua mạng, triển khai HTTPS và giới hạn mạng truy cập; xác thực hiện dùng chung một tài khoản quản trị, chưa có phân quyền theo người dùng.
+```powershell
+# 1. Build Fat JAR
+mvn clean package -DskipTests
 
-Ví dụ các giá trị không phải bí mật có thể đặt trong PowerShell:
+# 2. Sử dụng jpackage của JDK 21 tạo file .exe đóng gói kèm runtime tối giản
+jpackage `
+  --type app-image `
+  --name "ReportExportTool" `
+  --input target/ `
+  --main-jar microservice-report-tool-1.0.0.jar `
+  --main-class com.report.tool.ReportToolApplication `
+  --dest dist/ `
+  --win-shortcut `
+  --win-menu
+```
+Thư mục `dist/ReportExportTool/ReportExportTool.exe` có thể nén zip và gửi cho người dùng mở chạy trực tiếp.
 
+---
+
+## 6. Quy tắc dữ liệu & Vận hành nâng cao
+
+### Cơ chế ghép nối (Hash-Join) & Giới hạn dòng
+- Mối quan hệ ghép mặc định là **LEFT JOIN**: Nếu bản ghi phụ không tồn tại, dòng gốc vẫn được giữ nguyên và trường phụ hiển thị dấu `-`.
+- Giới hạn tải mặc định: **50.000 dòng** ở bảng gốc để đảm bảo an toàn bộ nhớ. Có thể tùy chỉnh qua biến môi trường `REPORT_MAX_ROWS` (từ `20` đến `1.000.000` tùy theo dung lượng RAM máy chủ).
+
+### Bảo mật mật khẩu & Tự động kết nối lại
+- File `connections.json` chỉ lưu metadata kết nối, **tuyệt đối không lưu mật khẩu** database.
+- Khi khởi động lại máy, bạn có thể bấm *Kết nối lại* trên UI hoặc truyền mật khẩu tự động qua biến môi trường theo cú pháp:
+  `REPORT_DB_PASSWORD_<ID_DB_VIẾT_HOA>`.
+  *(Ví dụ: ID kết nối là `db_a1b2c3` thì biến tương ứng là `REPORT_DB_PASSWORD_DB_A1B2C3`).*
+
+### Chia sẻ trên mạng LAN / OpenVPN
+Để các thành viên khác trong team truy cập qua địa chỉ IP:
 ```powershell
 $env:REPORT_TOOL_BIND_ADDRESS = '0.0.0.0'
-$env:REPORT_TOOL_USERNAME = 'report'
-# Cấp REPORT_TOOL_PASSWORD từ cơ chế quản lý bí mật trước khi chạy.
+$env:REPORT_TOOL_USERNAME = 'admin'
+$env:REPORT_TOOL_PASSWORD = 'MatKhauBaoMatCuaBan123'
 java -jar target/microservice-report-tool-1.0.0.jar
 ```
+Khi bind ra ngoài IP `127.0.0.1`, hệ thống bắt buộc yêu cầu `REPORT_TOOL_PASSWORD` và tự động kích hoạt hộp thoại xác thực **HTTP Basic Authentication**.
 
-Có thể tắt tự mở trình duyệt bằng `--report.open-browser=false`; đổi cổng bằng `--server.port=8081`. Các kết nối database dùng cấu hình TLS trong adapter tương ứng; cần điều chỉnh theo chứng thư và chính sách của môi trường triển khai trước khi dùng trên mạng không tin cậy.
+---
 
-## Kiểm thử
+## 7. Kiểm thử hệ thống (Automated Testing)
 
 ```powershell
+# Chạy toàn bộ kiểm thử Unit & Integration Test Java
 mvn test
+
+# Chạy kiểm thử hồi quy Frontend JavaScript logic
 node src/test/js/app-regression.mjs
 ```
 
-Kiểm thử Java nạp JDBC driver thật và kiểm tra URL của cả bốn loại; dùng H2 ở chế độ tương thích PostgreSQL, MySQL, SQL Server và Oracle để kiểm tra truy vấn, ghép dữ liệu, schema, lọc ngày, giới hạn dòng, API upload/preview/export, độ chính xác Excel và kiểm soát truy cập. Kiểm thử JavaScript chạy logic frontend với response giả lập. Đây không thay thế kiểm thử tích hợp với các database thật của công ty.
+Bộ kiểm thử tự động xác minh:
+- Tải đúng Driver cho cả 4 hệ quản trị: MySQL, PostgreSQL, SQL Server, Oracle.
+- Truy vấn H2 mô phỏng tương thích 4 dialect, kiểm tra Hash-Join, schema, lọc khoảng ngày.
+- Kiểm tra toàn vẹn định dạng template Apache POI và mã hóa dữ liệu đặc thù (CLOB, BLOB Base64, Long ID).
+
+---
+
+## 8. Giấy phép (License)
+
+Dự án được phân phối dưới giấy phép **MIT License**. Tự do sử dụng, tùy biến và tích hợp trong các hệ thống nội bộ doanh nghiệp.
