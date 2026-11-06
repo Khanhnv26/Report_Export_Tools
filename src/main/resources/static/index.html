@@ -15,9 +15,21 @@
     <aside class="sidebar">
       <div class="sidebar-card">
         <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
-        <label for="profile">Mẫu đã lưu</label><select id="profile" v-model="selectedProfile" @change="loadProfile"><option value="">Chọn mẫu…</option><option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option></select>
+        <label for="profile">Mẫu đã lưu</label>
+        <div class="profile-picker-row">
+          <select id="profile" v-model="selectedProfile" @change="loadProfile">
+            <option value="" disabled :selected="!selectedProfile">-- Chọn mẫu đã lưu --</option>
+            <option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option>
+          </select>
+          <button v-if="selectedProfile" type="button" class="danger-icon-btn" @click="deleteProfile(selectedProfile)" title="Xóa mẫu này" aria-label="Xóa mẫu">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </button>
+        </div>
         <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
-        <button v-if="selectedProfile" class="wide danger-text" @click="deleteProfile(selectedProfile)">Xóa mẫu này</button>
+        <button v-if="selectedProfile" class="wide danger-text" @click="deleteProfile(selectedProfile)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          Xóa mẫu “{{ selectedProfile }}”
+        </button>
       </div>
       <div class="sidebar-card">
         <h2>Tiến trình</h2>
@@ -69,7 +81,30 @@
       <section v-if="step===2" aria-label="Cấu hình cột đầu ra">
         <p class="lead">Chọn cấu trúc file, tên cột và cách hiển thị giá trị trong Excel.</p>
         <fieldset class="mode-picker"><legend>Cách xuất</legend><label><input type="radio" value="TABLE" v-model="config.outputMode" @change="changeOutputMode"><span><strong>Bảng Excel mới</strong><small>Tự đặt tiêu đề, thứ tự và định dạng cột.</small></span></label><label><input type="radio" value="TEMPLATE" v-model="config.outputMode" @change="changeOutputMode"><span><strong>Dùng file mẫu</strong><small>Điền vào các cột của sheet đầu tiên.</small></span></label></fieldset>
-        <div v-if="isTemplate" class="template-upload form-grid two"><label>File Excel mẫu<input type="file" accept=".xlsx" @change="handleFileUpload" :disabled="uploadLoading"><span class="help">{{ uploadLoading?'Đang đọc file…':templateFileName || '.xlsx · tối đa 50 MB' }}</span></label><label>Dòng tiêu đề<input type="number" min="1" :value="config.headerRow+1" @change="config.headerRow=Math.max(0,Number($event.target.value)-1);onHeaderRowChange()"><span class="help">Nhập số dòng như hiển thị trong Excel.</span></label></div>
+        <div v-if="isTemplate" class="template-upload form-grid two">
+          <div class="form-field">
+            <label for="template-file-input">File Excel mẫu</label>
+            <div class="custom-file-box" :class="{ 'has-file': !!templateFileName }">
+              <input type="file" id="template-file-input" accept=".xlsx" @change="handleFileUpload" :disabled="uploadLoading" class="sr-only">
+              <label for="template-file-input" class="custom-file-trigger" :class="{ disabled: uploadLoading }">
+                <span class="custom-file-btn">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>{{ uploadLoading ? 'Đang đọc…' : (templateFileName ? 'Đổi file' : 'Chọn file') }}</span>
+                </span>
+                <span class="custom-file-name" :title="templateFileName || 'Chưa chọn file mẫu'">
+                  <svg v-if="templateFileName" class="excel-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#16a34a" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <span class="text-truncate">{{ templateFileName || 'Chưa chọn file .xlsx' }}</span>
+                </span>
+              </label>
+            </div>
+            <span class="help">{{ uploadLoading ? 'Đang đọc cấu trúc template…' : (templateFileName ? 'Đã nhận file mẫu .xlsx' : '.xlsx · tối đa 50 MB') }}</span>
+          </div>
+          <div class="form-field">
+            <label for="header-row-input">Dòng tiêu đề</label>
+            <input id="header-row-input" type="number" min="1" :value="config.headerRow+1" @change="config.headerRow=Math.max(0,Number($event.target.value)-1);onHeaderRowChange()">
+            <span class="help">Nhập số dòng như hiển thị trong Excel.</span>
+          </div>
+        </div>
         <p v-if="errors.template || errors.output" class="field-error" role="alert">{{ errors.template || errors.output }}</p>
         <div class="section-heading"><h2>{{ config.outputColumns.length }} cột đầu ra</h2><div class="button-group"><button v-if="isTemplate" @click="autoDetectHeader" :disabled="!config.templateId || uploadLoading">Tự động tìm dòng tiêu đề</button><button v-if="isTemplate" @click="smartAutoMatch">Ghép tên trùng nhau</button><template v-else><button @click="syncOutputColumns">Thêm các cột nguồn còn thiếu</button><button @click="addOutputColumn">Thêm cột</button></template></div></div>
         <p class="muted">{{ isTemplate?'Thứ tự và tiêu đề theo file mẫu. Cột chưa chọn trường nguồn sẽ được bỏ qua.':'Kéo dòng hoặc dùng nút lên / xuống để đổi thứ tự. Bỏ cột không cần xuất bằng nút Xóa.' }}</p>

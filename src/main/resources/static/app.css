@@ -142,6 +142,16 @@ input, select {
   transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  padding-right: 32px;
+}
+
 input:hover:not([readonly]):not(:disabled),
 select:hover:not(:disabled) {
   border-color: #9ba8b9;
@@ -701,6 +711,134 @@ main.sources-page {
   background: #f5f6f8;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-field > label,
+.form-field > span.field-label {
+  display: block;
+  font-weight: 600;
+  color: #3d4754;
+  margin-bottom: 6px;
+}
+
+.custom-file-box {
+  min-height: 39px;
+  background: #fff;
+  border: 1px solid #bac3ce;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  align-items: center;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.custom-file-box:hover {
+  border-color: #9ba8b9;
+}
+
+.custom-file-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.custom-file-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 4px 8px 4px 4px;
+  cursor: pointer;
+  gap: 10px;
+  user-select: none;
+}
+
+.custom-file-trigger.disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.custom-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.custom-file-trigger:hover:not(.disabled) .custom-file-btn {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.custom-file-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.custom-file-box.has-file .custom-file-name {
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.custom-file-name .excel-icon {
+  flex-shrink: 0;
+}
+
+.custom-file-name .text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-picker-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.profile-picker-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.danger-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 39px;
+  height: 39px;
+  min-height: 39px;
+  flex-shrink: 0;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.danger-icon-btn:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
 }
 
 .table-wrap {
