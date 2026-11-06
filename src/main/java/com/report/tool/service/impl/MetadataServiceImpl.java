@@ -3,6 +3,9 @@ package com.report.tool.service.impl;
 import com.report.tool.dto.request.DBConnectionRequest;
 import com.report.tool.dto.response.ColumnResponse;
 import com.report.tool.dto.response.DatabaseResponse;
+import com.report.tool.database.DatabaseAdapters;
+import com.report.tool.database.DatabaseIdentifiers;
+import com.report.tool.database.MetadataScope;
 import com.report.tool.exception.DatabaseConnectionException;
 import com.report.tool.helper.DataSourceRegistry;
 import com.report.tool.service.MetadataService;
@@ -24,6 +27,7 @@ import java.util.List;
 public class MetadataServiceImpl implements MetadataService {
 
     private final DataSourceRegistry dataSourceRegistry;
+    private final DatabaseAdapters adapters;
 
     @Override
     public DatabaseResponse addDataBase(DBConnectionRequest request) {
@@ -32,6 +36,7 @@ public class MetadataServiceImpl implements MetadataService {
                 .id(saved.getId())
                 .name(saved.getName())
                 .databaseName(saved.getDatabase())
+                .schema(saved.getSchema())
                 .dbType(saved.getDbType())
                 .host(saved.getHost())
                 .port(saved.getPort())
@@ -52,6 +57,7 @@ public class MetadataServiceImpl implements MetadataService {
                         .id(db.getId())
                         .name(db.getName())
                         .databaseName(db.getDatabase())
+                        .schema(db.getSchema())
                         .dbType(db.getDbType())
                         .host(db.getHost())
                         .port(db.getPort())
@@ -68,11 +74,11 @@ public class MetadataServiceImpl implements MetadataService {
 
         try (Connection conn = ds.getConnection()) {
             DatabaseMetaData meta = conn.getMetaData();
-            String catalog = conn.getCatalog();
-            String schema = conn.getSchema();
-            try (ResultSet rs = meta.getTables(catalog, schema, "%", new String[]{"TABLE", "VIEW"})) {
+            MetadataScope scope = scope(dbId, conn);
+            try (ResultSet rs = meta.getTables(scope.catalog(), pattern(meta, scope.schema()), "%", new String[]{"TABLE", "VIEW"})) {
                 while (rs.next()) {
                     String tableSchema = rs.getString("TABLE_SCHEM");
+                    if (scope.schema() != null && !scope.schema().equals(tableSchema)) continue;
                     if (tableSchema != null && (tableSchema.equalsIgnoreCase("sys") || tableSchema.equalsIgnoreCase("information_schema"))) {
                         continue;
                     }
@@ -83,20 +89,22 @@ public class MetadataServiceImpl implements MetadataService {
             log.error("Lỗi khi đọc danh sách bảng từ Database [{}]: {}", dbId, e.getMessage());
             throw new DatabaseConnectionException("Không thể đọc danh sách bảng từ Database [" + dbId + "]: " + e.getMessage(), e);
         }
-        return tables;
+        return tables.stream().distinct().sorted().toList();
     }
 
     @Override
     public List<ColumnResponse> getColumns(String dbId, String tableName) {
+        DatabaseIdentifiers.validate(tableName);
         DataSource ds = dataSourceRegistry.getDataSource(dbId);
         List<ColumnResponse> columns = new ArrayList<>();
 
         try (Connection conn = ds.getConnection()) {
             DatabaseMetaData meta = conn.getMetaData();
-            String catalog = conn.getCatalog();
-            String schema = conn.getSchema();
-            try (ResultSet rs = meta.getColumns(catalog, schema, tableName, "%")) {
+            MetadataScope scope = scope(dbId, conn);
+            try (ResultSet rs = meta.getColumns(scope.catalog(), pattern(meta, scope.schema()), pattern(meta, tableName), "%")) {
                 while (rs.next()) {
+                    if (!tableName.equals(rs.getString("TABLE_NAME"))) continue;
+                    if (scope.schema() != null && !scope.schema().equals(rs.getString("TABLE_SCHEM"))) continue;
                     columns.add(new ColumnResponse(
                             rs.getString("COLUMN_NAME"),
                             rs.getString("TYPE_NAME")
@@ -108,5 +116,17 @@ public class MetadataServiceImpl implements MetadataService {
             throw new DatabaseConnectionException("Không thể đọc danh sách cột từ bảng [" + tableName + "]: " + e.getMessage(), e);
         }
         return columns;
+    }
+
+    private MetadataScope scope(String dbId, Connection connection) throws SQLException {
+        return adapters.get(dataSourceRegistry.getDatabaseType(dbId))
+                .metadataScope(connection, dataSourceRegistry.getDatabaseSchema(dbId));
+    }
+
+    private String pattern(DatabaseMetaData metadata, String value) throws SQLException {
+        if (value == null) return null;
+        String escape = metadata.getSearchStringEscape();
+        if (escape == null || escape.isEmpty()) return value;
+        return value.replace(escape, escape + escape).replace("_", escape + "_").replace("%", escape + "%");
     }
 }

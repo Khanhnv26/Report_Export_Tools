@@ -1,55 +1,62 @@
 package com.report.tool.helper;
 
-import com.report.tool.exception.InvalidIdentifierException;
+import com.report.tool.database.DatabaseAdapters;
+import com.report.tool.database.DatabaseAdapter;
+import com.report.tool.database.DatabaseIdentifiers;
+import com.report.tool.database.DatabaseRowMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
+@RequiredArgsConstructor
 public class SqlBuilder {
-    private static final Pattern SAFE_IDENTIFIER = Pattern.compile("^[a-zA-Z0-9_]+$");
-
-    public String limitQuery(String sql, String dbType) {
-        if ("SQLSERVER".equalsIgnoreCase(dbType) || "MSSQL".equalsIgnoreCase(dbType)) {
-            return "SELECT TOP (:rowLimit) " + sql.substring("SELECT ".length());
-        }
-        return sql + " LIMIT :rowLimit";
-    }
+    private final DatabaseAdapters adapters;
 
     public String validateIdentifier(String identifier) {
-        if (identifier == null || !SAFE_IDENTIFIER.matcher(identifier).matches()) {
-            throw new InvalidIdentifierException(identifier);
-        }
-        return identifier;
+        return DatabaseIdentifiers.validate(identifier);
     }
 
-    public String buildBaseQuery(String table, Collection<String> columns, String filterCol, boolean hasDateFilter) {
-        String safeTable = validateIdentifier(table);
+    public String buildBaseQuery(String dbType, String schema, String table, Collection<String> columns,
+                                 String filterCol, boolean hasDateFilter) {
+        DatabaseAdapter adapter = adapters.get(dbType);
+        String safeTable = tableReference(adapter, schema, table);
         String colList = columns.stream()
-                .map(this::validateIdentifier)
+                .map(column -> adapter.quoteIdentifier(validateIdentifier(column)))
                 .distinct()
                 .collect(Collectors.joining(", "));
         StringBuilder sql = new StringBuilder("SELECT ").append(colList).append(" FROM ").append(safeTable);
         if (hasDateFilter && filterCol != null && !filterCol.isBlank()) {
-            String safeFilter = validateIdentifier(filterCol);
+            String safeFilter = adapter.quoteIdentifier(validateIdentifier(filterCol));
             sql.append(" WHERE ").append(safeFilter).append(" >= :fromDate AND ")
                     .append(safeFilter).append(" < :toDateExclusive");
         }
-        return sql.toString();
+        return adapter.limitQuery(sql.toString());
     }
 
-    public String buildJoinQuery(String table, Collection<String> columns, String targetKey) {
-        String safeTable = validateIdentifier(table);
-        String safeTargetKey = validateIdentifier(targetKey);
+    public String buildJoinQuery(String dbType, String schema, String table, Collection<String> columns, String targetKey) {
+        DatabaseAdapter adapter = adapters.get(dbType);
+        String safeTable = tableReference(adapter, schema, table);
+        String safeTargetKey = adapter.quoteIdentifier(validateIdentifier(targetKey));
         Set<String> allCols = new LinkedHashSet<>(columns);
-        allCols.add(safeTargetKey);
+        allCols.add(targetKey);
         String colList = allCols.stream()
-                .map(this::validateIdentifier)
+                .map(column -> adapter.quoteIdentifier(validateIdentifier(column)))
                 .collect(Collectors.joining(", "));
-        return "SELECT " + colList + " FROM " + safeTable + " WHERE " + safeTargetKey + " IN (:keys)";
+        return adapter.limitQuery("SELECT " + colList + " FROM " + safeTable + " WHERE " + safeTargetKey + " IN (:keys)");
+    }
+
+    public int keyBatchSize(String dbType) { return adapters.get(dbType).keyBatchSize(); }
+
+    public DatabaseRowMapper rowMapper(String dbType) { return new DatabaseRowMapper(adapters.get(dbType)); }
+
+    private String tableReference(DatabaseAdapter adapter, String schema, String table) {
+        validateIdentifier(table);
+        if (schema != null && !schema.isBlank()) validateIdentifier(schema);
+        return adapter.tableReference(schema, table);
     }
 }

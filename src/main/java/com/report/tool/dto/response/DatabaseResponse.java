@@ -16,6 +16,7 @@ public class DatabaseResponse {
     private String host;
     private int port;
     private String databaseName;
+    private String schema;
     private String username;
     private boolean connected;
 }

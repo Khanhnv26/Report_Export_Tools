@@ -1,6 +1,25 @@
 # Microservice Report Tool
 
-Tool đọc dữ liệu từ PostgreSQL, MySQL và SQL Server, ghép theo khóa tại tầng ứng dụng rồi xuất vào file Excel mẫu `.xlsx`.
+Tool đọc dữ liệu từ PostgreSQL, MySQL, SQL Server và Oracle, ghép theo khóa tại tầng ứng dụng rồi xuất vào file Excel mẫu `.xlsx`.
+
+## Database được hỗ trợ
+
+- MySQL: cổng mặc định 3306, chọn database; không cần schema riêng.
+- PostgreSQL: cổng 5432, chọn database và schema tùy chọn.
+- SQL Server / MSSQL: cổng 1433, chọn database và schema tùy chọn.
+- Oracle: cổng 1521; nhập **service name** vào ô tương ứng (ví dụ `orclpdb.company.local`), không nhập SID hay toàn bộ JDBC URL. Schema tùy chọn; bỏ trống sẽ dùng schema hiện tại của tài khoản.
+
+Mỗi kết nối gắn với một schema, phần đọc metadata và truy vấn dùng cùng schema đó. Muốn ghép hai schema, tạo hai kết nối và đặt alias riêng cho các bảng trong báo cáo. Tên schema, bảng và cột dùng đúng chữ hoa/thường theo metadata. Hỗ trợ tên chứa chữ Unicode, chữ số, khoảng trắng, `_`, `$`, `#`, `-`; tên có dấu chấm hoặc dấu ngoặc/nháy chưa được hỗ trợ. Các identifier được quote theo từng database để xử lý cột trùng từ khóa.
+
+Danh sách database, nhãn kết nối và cổng mặc định lấy từ `GET /api/database-types`; giao diện không khai báo danh sách riêng. Driver của cả bốn loại được đóng gói trong JAR. Adapter Oracle dùng cú pháp service name theo [tài liệu Oracle JDBC](https://docs.oracle.com/en/database/oracle/oracle-database/18/jjdbc/data-sources-and-URLs.html).
+
+Các cột CLOB được đọc thành text, BLOB/binary thành Base64 ngay khi connection còn mở; giới hạn 1 MiB mỗi giá trị CLOB/BLOB/binary. Array, UUID, JSON và các giá trị đặc thù khác được xuất dạng text. Các chức năng SID/TNS/Oracle Wallet, MongoDB, Redis và tải JDBC driver tùy ý chưa được triển khai.
+
+## Thêm loại database mới
+
+1. Viết một adapter trong `src/main/java/com/report/tool/database` thực thi `DatabaseAdapter`: khai báo loại/cổng/driver, URL kết nối, quote identifier, giới hạn dòng và phạm vi metadata. Có thể tùy chỉnh cách đọc giá trị JDBC và kích thước lô khóa.
+2. Đăng ký adapter trong `DatabaseAdapters` và khai báo JDBC driver trong `pom.xml`.
+3. Bổ sung kiểm thử driver, truy vấn có schema/từ khóa, lọc ngày và ghép dữ liệu. Không cần sửa phần ghép báo cáo hoặc danh sách lựa chọn trên giao diện.
 
 ## Chạy trên máy cá nhân
 
@@ -49,7 +68,7 @@ $env:REPORT_TOOL_USERNAME = 'report'
 java -jar target/microservice-report-tool-1.0.0.jar
 ```
 
-Có thể tắt tự mở trình duyệt bằng `--report.open-browser=false`; đổi cổng bằng `--server.port=8081`. Các kết nối database dùng cấu hình TLS của driver hiện có trong `DataSourceRegistry`; cần điều chỉnh theo chứng thư và chính sách của môi trường triển khai trước khi dùng trên mạng không tin cậy.
+Có thể tắt tự mở trình duyệt bằng `--report.open-browser=false`; đổi cổng bằng `--server.port=8081`. Các kết nối database dùng cấu hình TLS trong adapter tương ứng; cần điều chỉnh theo chứng thư và chính sách của môi trường triển khai trước khi dùng trên mạng không tin cậy.
 
 ## Kiểm thử
 
@@ -58,4 +77,4 @@ mvn test
 node src/test/js/app-regression.mjs
 ```
 
-Kiểm thử Java dùng database H2 riêng biệt ở chế độ tương thích PostgreSQL, MySQL và SQL Server để kiểm tra truy vấn, ghép dữ liệu, lọc ngày, giới hạn dòng, API upload/preview/export, độ chính xác Excel và kiểm soát truy cập. Kiểm thử JavaScript chạy logic frontend với response giả lập. Đây không thay thế kiểm thử tích hợp với các database thật của công ty.
+Kiểm thử Java nạp JDBC driver thật và kiểm tra URL của cả bốn loại; dùng H2 ở chế độ tương thích PostgreSQL, MySQL, SQL Server và Oracle để kiểm tra truy vấn, ghép dữ liệu, schema, lọc ngày, giới hạn dòng, API upload/preview/export, độ chính xác Excel và kiểm soát truy cập. Kiểm thử JavaScript chạy logic frontend với response giả lập. Đây không thay thế kiểm thử tích hợp với các database thật của công ty.

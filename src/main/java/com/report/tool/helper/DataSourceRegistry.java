@@ -3,6 +3,9 @@ package com.report.tool.helper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.report.tool.dto.request.DBConnectionRequest;
+import com.report.tool.database.DatabaseAdapters;
+import com.report.tool.database.DatabaseAdapter;
+import com.report.tool.database.DatabaseIdentifiers;
 import com.report.tool.exception.DatabaseConnectionException;
 import com.report.tool.exception.DatabaseNotFoundException;
 import com.zaxxer.hikari.HikariConfig;
@@ -31,14 +34,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DataSourceRegistry {
 
     private final File storageFile;
+    private final DatabaseAdapters adapters;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Map<String, DBConnectionRequest> savedConfigs = new ConcurrentHashMap<>();
     private final Map<String, HikariDataSource> dataSources = new ConcurrentHashMap<>();
     private final Map<String, NamedParameterJdbcTemplate> jdbcTemplates = new ConcurrentHashMap<>();
 
-    public DataSourceRegistry(@Value("${report.connections-file:connections.json}") String connectionsFile) {
+    public DataSourceRegistry(@Value("${report.connections-file:connections.json}") String connectionsFile,
+                              DatabaseAdapters adapters) {
         storageFile = new File(connectionsFile);
+        this.adapters = adapters;
     }
 
     @PostConstruct
@@ -78,12 +84,17 @@ public class DataSourceRegistry {
     public void connectInternal(DBConnectionRequest request, boolean persist) {
         if (request.getId() == null || !request.getId().matches("[a-zA-Z0-9_-]+")
                 || request.getHost() == null || !request.getHost().matches("[a-zA-Z0-9.\\-:\\[\\]]+")
-                || request.getDatabase() == null || !request.getDatabase().matches("[a-zA-Z0-9_-]+")
+                || request.getDatabase() == null || !request.getDatabase().matches("[\\p{L}\\p{N}_$# .-]+")
                 || request.getPort() < 0 || request.getPort() > 65535) {
             throw new DatabaseConnectionException("ID, host, cổng hoặc tên database không hợp lệ!");
         }
-        String jdbcUrl = buildJdbcUrl(request);
-        String driver = getDriverClassName(request.getDbType());
+        DatabaseAdapter adapter = adapters.get(request.getDbType());
+        if (request.getSchema() != null && !request.getSchema().isBlank()) DatabaseIdentifiers.validate(request.getSchema());
+        request.setDbType(adapter.type().id());
+        request.setPort(adapter.effectivePort(request));
+        if (!adapter.type().supportsSchema()) request.setSchema(null);
+        String jdbcUrl = adapter.jdbcUrl(request);
+        String driver = adapter.type().driverClassName();
 
         HikariConfig config = new HikariConfig();
         config.setPoolName("pool-" + request.getId());
@@ -104,6 +115,8 @@ public class DataSourceRegistry {
                     dataSource.close();
                     throw new DatabaseConnectionException("Kết nối Database thất bại: Connection không hợp lệ hoặc timeout!");
                 }
+                request.setSchema(adapter.metadataScope(conn, request.getSchema()).schema());
+                if (request.getSchema() != null) DatabaseIdentifiers.validate(request.getSchema());
             }
         } catch (Exception e) {
             if (dataSource != null) dataSource.close();
@@ -154,6 +167,7 @@ public class DataSourceRegistry {
     private DBConnectionRequest withoutPassword(DBConnectionRequest request) {
         return DBConnectionRequest.builder().id(request.getId()).name(request.getName()).dbType(request.getDbType())
                 .host(request.getHost()).port(request.getPort()).database(request.getDatabase())
+                .schema(request.getSchema())
                 .username(request.getUsername()).build();
     }
 
@@ -169,38 +183,6 @@ public class DataSourceRegistry {
         }
         saveToDisk();
         log.info("Đã xóa kết nối Database: {}", dbId);
-    }
-
-    private String buildJdbcUrl(DBConnectionRequest request) {
-        String type = request.getDbType() != null ? request.getDbType().toUpperCase() : "POSTGRESQL";
-        int port = request.getPort() > 0 ? request.getPort() : defaultPort(type);
-        return switch (type) {
-            case "MYSQL" -> String.format("jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true",
-                    request.getHost(), port, request.getDatabase());
-            case "POSTGRESQL" -> String.format("jdbc:postgresql://%s:%d/%s",
-                    request.getHost(), port, request.getDatabase());
-            case "SQLSERVER", "MSSQL" -> String.format("jdbc:sqlserver://%s:%d;databaseName=%s;encrypt=true;trustServerCertificate=true;",
-                    request.getHost(), port, request.getDatabase());
-            default -> throw new DatabaseConnectionException("Chưa hỗ trợ loại Database: " + type);
-        };
-    }
-
-    private int defaultPort(String type) {
-        return switch (type) {
-            case "MYSQL" -> 3306;
-            case "SQLSERVER", "MSSQL" -> 1433;
-            default -> 5432;
-        };
-    }
-
-    private String getDriverClassName(String dbType) {
-        String type = dbType != null ? dbType.toUpperCase() : "POSTGRESQL";
-        return switch (type) {
-            case "MYSQL" -> "com.mysql.cj.jdbc.Driver";
-            case "POSTGRESQL" -> "org.postgresql.Driver";
-            case "SQLSERVER", "MSSQL" -> "com.microsoft.sqlserver.jdbc.SQLServerDriver";
-            default -> throw new DatabaseConnectionException("Chưa hỗ trợ loại Database: " + type);
-        };
     }
 
     public DataSource getDataSource(String dbId) {
@@ -223,6 +205,12 @@ public class DataSourceRegistry {
         DBConnectionRequest config = savedConfigs.get(dbId);
         if (config == null) throw new DatabaseNotFoundException(dbId);
         return config.getDbType();
+    }
+
+    public String getDatabaseSchema(String dbId) {
+        DBConnectionRequest config = savedConfigs.get(dbId);
+        if (config == null) throw new DatabaseNotFoundException(dbId);
+        return config.getSchema();
     }
 
     public boolean isConnected(String dbId) {

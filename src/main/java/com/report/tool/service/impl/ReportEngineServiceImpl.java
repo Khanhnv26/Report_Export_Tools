@@ -28,7 +28,6 @@ import java.util.concurrent.Semaphore;
 @RequiredArgsConstructor
 @Slf4j
 public class ReportEngineServiceImpl implements ReportEngineService {
-    private static final int BATCH_SIZE = 1000;
     private static final int PREVIEW_SIZE = 20;
     private final DataSourceRegistry registry;
     private final SqlBuilder sqlBuilder;
@@ -62,11 +61,11 @@ public class ReportEngineServiceImpl implements ReportEngineService {
         MapSqlParameterSource params = dateParameters(base);
         int limit = preview ? PREVIEW_SIZE : maxRows;
         params.addValue("rowLimit", preview ? PREVIEW_SIZE : maxRows + 1);
-        String sql = sqlBuilder.limitQuery(sqlBuilder.buildBaseQuery(base.getTableName(), sourceColumns.get(baseAlias),
-                base.getFilterColumn(), params.hasValue("fromDate")), registry.getDatabaseType(base.getDbId()));
+        String sql = sqlBuilder.buildBaseQuery(registry.getDatabaseType(base.getDbId()), registry.getDatabaseSchema(base.getDbId()),
+                base.getTableName(), sourceColumns.get(baseAlias), base.getFilterColumn(), params.hasValue("fromDate"));
         try {
             NamedParameterJdbcTemplate jdbc = registry.getJdbc(base.getDbId());
-            List<Map<String, Object>> rawRows = jdbc.queryForList(sql, params);
+            List<Map<String, Object>> rawRows = jdbc.query(sql, params, sqlBuilder.rowMapper(registry.getDatabaseType(base.getDbId())));
             checkLimit(rawRows.size());
             List<Map<String, Object>> rows = new ArrayList<>();
             for (Map<String, Object> raw : rawRows) {
@@ -171,15 +170,17 @@ public class ReportEngineServiceImpl implements ReportEngineService {
             rows.forEach(row -> columns.get(name).forEach(column -> row.put(name + "." + column, null)));
             return rows;
         }
-        String sql = sqlBuilder.limitQuery(sqlBuilder.buildJoinQuery(join.getTableName(), columns.get(name), join.getTargetKey()),
-                registry.getDatabaseType(join.getDbId()));
+        String dbType = registry.getDatabaseType(join.getDbId());
+        String sql = sqlBuilder.buildJoinQuery(dbType, registry.getDatabaseSchema(join.getDbId()),
+                join.getTableName(), columns.get(name), join.getTargetKey());
+        int batchSize = sqlBuilder.keyBatchSize(dbType);
         Map<Object, List<Map<String, Object>>> lookup = new HashMap<>();
         NamedParameterJdbcTemplate jdbc = registry.getJdbc(join.getDbId());
         int fetched = 0;
-        for (int i = 0; i < keys.size(); i += BATCH_SIZE) {
-            List<Object> batch = keys.subList(i, Math.min(i + BATCH_SIZE, keys.size()));
-            List<Map<String, Object>> targetRows = jdbc.queryForList(sql,
-                    Map.of("keys", batch, "rowLimit", maxRows - fetched + 1));
+        for (int i = 0; i < keys.size(); i += batchSize) {
+            List<Object> batch = keys.subList(i, Math.min(i + batchSize, keys.size()));
+            List<Map<String, Object>> targetRows = jdbc.query(sql,
+                    Map.of("keys", batch, "rowLimit", maxRows - fetched + 1), sqlBuilder.rowMapper(dbType));
             fetched += targetRows.size();
             checkLimit(fetched);
             for (Map<String, Object> target : targetRows) {

@@ -11,6 +11,7 @@ createApp({
       exportLoading: false,
 
       databases: [],
+      databaseTypes: [],
 
       newDb: {
         name: '',
@@ -18,6 +19,7 @@ createApp({
         host: 'localhost',
         port: 3306,
         database: '',
+        schema: '',
         username: 'root',
         password: ''
       },
@@ -53,6 +55,10 @@ createApp({
   },
 
   computed: {
+    selectedDatabaseType() {
+      return this.databaseTypes.find(type => type.id === this.newDb.dbType)
+        || { databaseLabel: 'Database', supportsSchema: false };
+    },
     allSelectedFields() {
       const list = [];
       const baseName = this.config.baseTable.alias || this.config.baseTable.tableName;
@@ -76,10 +82,21 @@ createApp({
   mounted() {
     this.initTheme();
     this.loadSavedProfilesFromStorage();
+    this.fetchDatabaseTypes();
     this.fetchDatabases();
   },
 
   methods: {
+    async fetchDatabaseTypes() {
+      try {
+        const res = await fetch('/api/database-types');
+        const json = await res.json();
+        if (!res.ok || !Array.isArray(json.data)) throw new Error(json.message || 'Không đọc được loại database');
+        this.databaseTypes = json.data;
+      } catch (err) {
+        alert('Không tải được danh sách database hỗ trợ: ' + err.message);
+      }
+    },
     initTheme() {
       const saved = localStorage.getItem('theme');
       if (saved) {
@@ -124,26 +141,23 @@ createApp({
     },
 
     onDbTypeChange() {
-      if (this.newDb.dbType === 'MYSQL') {
-        this.newDb.port = 3306;
-      } else if (this.newDb.dbType === 'SQLSERVER') {
-        this.newDb.port = 1433;
-      } else {
-        this.newDb.port = 5432;
-      }
+      const type = this.databaseTypes.find(type => type.id === this.newDb.dbType);
+      if (type) this.newDb.port = type.defaultPort;
+      this.newDb.schema = '';
     },
 
     editDatabase(db) {
       this.newDb = {
-        id: db.id, name: db.name, dbType: db.dbType, host: db.host, port: db.port,
-        database: db.databaseName, username: db.username || '', password: ''
+        id: db.id, name: db.name, dbType: db.dbType === 'MSSQL' ? 'SQLSERVER' : db.dbType, host: db.host, port: db.port,
+        database: db.databaseName, schema: db.schema || '', username: db.username || '', password: ''
       };
       this.showConnectModal = true;
     },
 
     openNewDatabase() {
       this.newDb = { name: '', dbType: 'MYSQL', host: 'localhost', port: 3306,
-        database: '', username: '', password: '' };
+        database: '', schema: '', username: '', password: '' };
+      this.onDbTypeChange();
       this.showConnectModal = true;
     },
 
@@ -227,7 +241,7 @@ createApp({
 
       if (!dbId || !table) return;
       try {
-        const res = await fetch(`/api/databases/${dbId}/tables/${table}/columns`);
+        const res = await fetch(`/api/databases/${encodeURIComponent(dbId)}/tables/${encodeURIComponent(table)}/columns`);
         const json = await res.json();
         if (json.status === 200 && json.data) {
           this.baseColumns = json.data;
@@ -288,7 +302,7 @@ createApp({
 
       if (!join.dbId || !join.tableName) return;
       try {
-        const res = await fetch(`/api/databases/${join.dbId}/tables/${join.tableName}/columns`);
+        const res = await fetch(`/api/databases/${encodeURIComponent(join.dbId)}/tables/${encodeURIComponent(join.tableName)}/columns`);
         const json = await res.json();
         if (json.status === 200 && json.data) {
           join.availableColumns = json.data;

@@ -118,7 +118,7 @@
                 <span class="w-2 h-2 rounded-full" :class="db.connected ? 'bg-emerald-500' : 'bg-amber-500'" :title="db.connected ? 'Đã kết nối' : 'Cần kết nối lại'"></span>
                 <div>
                   <div class="font-semibold text-xs text-slate-900 dark:text-slate-100">{{ db.name }}</div>
-                  <div class="text-[11px] font-mono text-slate-400">{{ db.host }}:{{ db.port }}/{{ db.databaseName }} ({{ db.dbType }})</div>
+                  <div class="text-[11px] font-mono text-slate-400">{{ db.host }}:{{ db.port }}/{{ db.databaseName }}{{ db.schema ? ' · ' + db.schema : '' }} ({{ db.dbType }})</div>
                 </div>
               </div>
 
@@ -403,9 +403,7 @@
             <div>
               <label class="block text-[11px] font-medium text-slate-500 mb-1">Loại DB:</label>
               <select v-model="newDb.dbType" @change="onDbTypeChange" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-                <option value="MYSQL">MySQL</option>
-                <option value="SQLSERVER">SQL Server (MSSQL)</option>
-                <option value="POSTGRESQL">PostgreSQL</option>
+                <option v-for="type in databaseTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
               </select>
             </div>
             <div>
@@ -420,7 +418,7 @@
               <input v-model="newDb.host" placeholder="localhost hoặc IP OpenVPN" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
             </div>
             <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">Tên Database:</label>
+              <label class="block text-[11px] font-medium text-slate-500 mb-1">{{ selectedDatabaseType.databaseLabel }}:</label>
               <input v-model="newDb.database" placeholder="VD: order_db" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
             </div>
           </div>
@@ -435,11 +433,15 @@
               <input type="password" v-model="newDb.password" placeholder="••••••••" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
             </div>
           </div>
+          <div v-if="selectedDatabaseType.supportsSchema">
+            <label class="block text-[11px] font-medium text-slate-500 mb-1">Schema (tùy chọn, dùng đúng chữ hoa/thường):</label>
+            <input v-model="newDb.schema" placeholder="Bỏ trống để dùng schema mặc định của tài khoản" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
+          </div>
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
           <button @click="showConnectModal = false" class="px-3 py-1.5 rounded text-xs text-slate-500 hover:text-slate-700">Hủy</button>
-          <button @click="saveNewDatabase" :disabled="connectLoading" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5">
+          <button @click="saveNewDatabase" :disabled="connectLoading || !databaseTypes.length" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5">
             <div v-if="connectLoading" class="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
             <span>{{ connectLoading ? 'Đang kiểm tra...' : 'Kiểm tra & Kết nối' }}</span>
           </button>
