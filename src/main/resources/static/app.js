@@ -4,16 +4,14 @@ createApp({
   data() {
     return {
       isDark: true,
-      activeTab: 'map', // 'map' | 'preview'
+      activeTab: 'map',
       showConnectModal: false,
       connectLoading: false,
       previewLoading: false,
       exportLoading: false,
 
-      // Databases list from backend
       databases: [],
 
-      // Connect DB Form
       newDb: {
         name: '',
         dbType: 'POSTGRESQL',
@@ -24,16 +22,13 @@ createApp({
         password: ''
       },
 
-      // Excel Template
       templateId: '',
       templateFileName: '',
       excelColumns: [],
 
-      // Base Table state
       baseTables: [],
       baseColumns: [],
 
-      // Report Configuration Payload
       config: {
         templateId: '',
         headerRow: 0,
@@ -46,13 +41,11 @@ createApp({
           toDate: ''
         },
         joins: [],
-        mapping: {} // { "A": "orders.order_code", ... }
+        mapping: {}
       },
 
-      // Preview Data
       previewRows: [],
 
-      // Profiles
       savedProfiles: {},
       selectedProfile: ''
     };
@@ -86,9 +79,6 @@ createApp({
   },
 
   methods: {
-    // ----------------------------------------------------
-    // THEME MANAGEMENT (LIGHT / DARK)
-    // ----------------------------------------------------
     initTheme() {
       const saved = localStorage.getItem('theme');
       if (saved) {
@@ -113,16 +103,12 @@ createApp({
       }
     },
 
-    // ----------------------------------------------------
-    // DATABASE CONNECTIONS API
-    // ----------------------------------------------------
     async fetchDatabases() {
       try {
         const res = await fetch('/api/databases');
         const json = await res.json();
         if (json.status === 200 && json.data) {
           this.databases = json.data;
-          // Set default base DB if not set
           if (!this.config.baseTable.dbId && this.databases.length > 0) {
             this.config.baseTable.dbId = this.databases[0].id;
             this.onBaseDbChange();
@@ -155,7 +141,6 @@ createApp({
         if (res.ok && json.status === 201) {
           alert('Kết nối Database thành công!');
           this.showConnectModal = false;
-          // Reset form
           this.newDb.name = '';
           this.newDb.database = '';
           this.newDb.password = '';
@@ -187,9 +172,6 @@ createApp({
       }
     },
 
-    // ----------------------------------------------------
-    // BASE TABLE & JOIN TABLE HANDLERS
-    // ----------------------------------------------------
     async onBaseDbChange() {
       const dbId = this.config.baseTable.dbId;
       this.baseTables = [];
@@ -225,7 +207,6 @@ createApp({
         const json = await res.json();
         if (json.status === 200 && json.data) {
           this.baseColumns = json.data;
-          // By default check all columns
           this.config.baseTable.columns = this.baseColumns.map(c => c.name);
         }
       } catch (err) {
@@ -285,7 +266,7 @@ createApp({
         const res = await fetch(`/api/databases/${join.dbId}/tables/${join.tableName}/columns`);
         const json = await res.json();
         if (json.status === 200 && json.data) {
-          join.availableColumns = json.data;
+          join.availableColumns = join.data;
           join.columns = join.availableColumns.map(c => c.name);
         }
       } catch (err) {
@@ -293,9 +274,6 @@ createApp({
       }
     },
 
-    // ----------------------------------------------------
-    // EXCEL TEMPLATE MANAGEMENT
-    // ----------------------------------------------------
     async handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -316,14 +294,12 @@ createApp({
           this.config.templateId = this.templateId;
           this.excelColumns = json.data.columns;
 
-          // Initialize mapping object
           this.excelColumns.forEach(c => {
             if (!this.config.mapping[c.letter]) {
               this.config.mapping[c.letter] = '';
             }
           });
 
-          // Run smart auto-match automatically
           this.smartAutoMatch();
         } else {
           alert('Lỗi đọc file Excel: ' + (json.message || 'Kiểm tra định dạng file'));
@@ -333,34 +309,26 @@ createApp({
       }
     },
 
-    // ----------------------------------------------------
-    // SMART AUTO-MATCH LOGIC
-    // ----------------------------------------------------
     smartAutoMatch() {
       if (!this.excelColumns.length || !this.allSelectedFields.length) return;
 
       const normalize = (str) => {
         return str.toLowerCase()
-          .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Bỏ dấu tiếng Việt
-          .replace(/[^a-z0-9]/g, ""); // Chỉ giữ chữ và số
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]/g, "");
       };
 
-      let matchedCount = 0;
       this.excelColumns.forEach(col => {
         const targetClean = normalize(col.title);
-        // Find best field match
         for (const field of this.allSelectedFields) {
           const colName = field.includes('.') ? field.split('.')[1] : field;
           const fieldClean = normalize(colName);
 
-          // Direct match or substring match
           if (fieldClean === targetClean || targetClean.includes(fieldClean) || fieldClean.includes(targetClean)) {
             this.config.mapping[col.letter] = field;
-            matchedCount++;
             break;
           }
 
-          // Common aliases mapping
           const isCode = targetClean.includes('ma') && fieldClean.includes('code');
           const isName = (targetClean.includes('ten') || targetClean.includes('khach')) && (fieldClean.includes('name') || fieldClean.includes('user'));
           const isPhone = (targetClean.includes('sdt') || targetClean.includes('thoai')) && fieldClean.includes('phone');
@@ -370,16 +338,12 @@ createApp({
 
           if (isCode || isName || isPhone || isMoney || isDate || isStatus) {
             this.config.mapping[col.letter] = field;
-            matchedCount++;
             break;
           }
         }
       });
     },
 
-    // ----------------------------------------------------
-    // PREVIEW & EXPORT API
-    // ----------------------------------------------------
     async fetchPreview() {
       if (!this.config.baseTable.dbId || !this.config.baseTable.tableName) {
         alert('Vui lòng chọn Database và Bảng gốc!');
@@ -456,9 +420,6 @@ createApp({
       return String(val);
     },
 
-    // ----------------------------------------------------
-    // SAVED PROFILES (LOCALSTORAGE)
-    // ----------------------------------------------------
     loadSavedProfilesFromStorage() {
       try {
         const stored = localStorage.getItem('saved_report_profiles');
