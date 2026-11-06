@@ -17,11 +17,17 @@ import java.util.Map;
 public class ReportConfigRequest {
 
     private String templateId;
-    private int headerRow = 0;
-    private BaseTable baseTable;
-    private List<JoinTable> joins = new ArrayList<>();
-    private Map<String, String> mapping = new LinkedHashMap<>();
 
+    @Builder.Default
+    private int headerRow = 0;
+
+    private BaseTable baseTable;
+
+    @Builder.Default
+    private List<JoinTable> joins = new ArrayList<>();
+
+    @Builder.Default
+    private Map<String, String> mapping = new LinkedHashMap<>();
 
     @Data
     @NoArgsConstructor
@@ -30,7 +36,10 @@ public class ReportConfigRequest {
     public static class BaseTable {
         private String dbId;
         private String tableName;
+
+        @Builder.Default
         private List<String> columns = new ArrayList<>();
+
         private String filterColumn;
         private String fromDate;
         private String toDate;
@@ -43,10 +52,11 @@ public class ReportConfigRequest {
     public static class JoinTable {
         private String dbId;
         private String tableName;
+
+        @Builder.Default
         private List<String> columns = new ArrayList<>();
+
         private String sourceKey;
         private String targetKey;
     }
-
-
 }

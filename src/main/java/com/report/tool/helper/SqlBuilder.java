@@ -1,5 +1,6 @@
 package com.report.tool.helper;
 
+import com.report.tool.exception.InvalidIdentifierException;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -14,7 +15,7 @@ public class SqlBuilder {
 
     public String validateIdentifier(String identifier) {
         if (identifier == null || !SAFE_IDENTIFIER.matcher(identifier).matches()) {
-            throw new IllegalArgumentException("Tên bảng hoặc cột không hợp lệ: " + identifier);
+            throw new InvalidIdentifierException(identifier);
         }
         return identifier;
     }
@@ -42,8 +43,4 @@ public class SqlBuilder {
                 .collect(Collectors.joining(", "));
         return "SELECT " + colList + " FROM " + safeTable + " WHERE " + safeTargetKey + " IN (:keys)";
     }
-
-
-
-
 }

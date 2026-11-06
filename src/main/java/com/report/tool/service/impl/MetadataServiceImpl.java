@@ -3,9 +3,11 @@ package com.report.tool.service.impl;
 import com.report.tool.dto.request.DBConnectionRequest;
 import com.report.tool.dto.response.ColumnResponse;
 import com.report.tool.dto.response.DatabaseResponse;
+import com.report.tool.exception.DatabaseConnectionException;
 import com.report.tool.helper.DataSourceRegistry;
 import com.report.tool.service.MetadataService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
@@ -18,12 +20,13 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MetadataServiceImpl implements MetadataService {
 
     private final DataSourceRegistry dataSourceRegistry;
 
     @Override
-    public DatabaseResponse addDataBase(DBConnectionRequest request) throws Exception {
+    public DatabaseResponse addDataBase(DBConnectionRequest request) {
         DBConnectionRequest saved = dataSourceRegistry.connectAndRegister(request);
         return DatabaseResponse.builder()
                 .id(saved.getId())
@@ -55,26 +58,28 @@ public class MetadataServiceImpl implements MetadataService {
     }
 
     @Override
-    public List<String> getTables(String dbId) throws SQLException {
-        DataSource ds =dataSourceRegistry.getDataSource(dbId);
+    public List<String> getTables(String dbId) {
+        DataSource ds = dataSourceRegistry.getDataSource(dbId);
         List<String> tables = new ArrayList<>();
 
         try (Connection conn = ds.getConnection()) {
             DatabaseMetaData meta = conn.getMetaData();
             String catalog = conn.getCatalog();
             String schema = conn.getSchema();
-            try (ResultSet rs = meta.getTables(catalog, schema, "%", new String [] {"TABLE", "VIEW"})) {
+            try (ResultSet rs = meta.getTables(catalog, schema, "%", new String[]{"TABLE", "VIEW"})) {
                 while (rs.next()) {
-                    String tableName = rs.getString("TABLE_NAME");
-                    tables.add(tableName);
+                    tables.add(rs.getString("TABLE_NAME"));
                 }
             }
+        } catch (SQLException e) {
+            log.error("Lỗi khi đọc danh sách bảng từ Database [{}]: {}", dbId, e.getMessage());
+            throw new DatabaseConnectionException("Không thể đọc danh sách bảng từ Database [" + dbId + "]: " + e.getMessage(), e);
         }
         return tables;
     }
 
     @Override
-    public List<ColumnResponse> getColumns(String dbId, String tableName) throws SQLException {
+    public List<ColumnResponse> getColumns(String dbId, String tableName) {
         DataSource ds = dataSourceRegistry.getDataSource(dbId);
         List<ColumnResponse> columns = new ArrayList<>();
 
@@ -84,11 +89,15 @@ public class MetadataServiceImpl implements MetadataService {
             String schema = conn.getSchema();
             try (ResultSet rs = meta.getColumns(catalog, schema, tableName, "%")) {
                 while (rs.next()) {
-                    String columnName = rs.getString("COLUMN_NAME");
-                    String columnType = rs.getString("TYPE_NAME");
-                    columns.add(new ColumnResponse(columnName, columnType));
+                    columns.add(new ColumnResponse(
+                            rs.getString("COLUMN_NAME"),
+                            rs.getString("TYPE_NAME")
+                    ));
                 }
             }
+        } catch (SQLException e) {
+            log.error("Lỗi khi đọc danh sách cột từ bảng [{}] của DB [{}]: {}", tableName, dbId, e.getMessage());
+            throw new DatabaseConnectionException("Không thể đọc danh sách cột từ bảng [" + tableName + "]: " + e.getMessage(), e);
         }
         return columns;
     }

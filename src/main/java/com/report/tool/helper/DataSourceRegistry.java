@@ -3,6 +3,8 @@ package com.report.tool.helper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.report.tool.dto.request.DBConnectionRequest;
+import com.report.tool.exception.DatabaseConnectionException;
+import com.report.tool.exception.DatabaseNotFoundException;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.annotation.PostConstruct;
@@ -35,8 +37,8 @@ public class DataSourceRegistry {
         if (!storageFile.exists()) return;
 
         try {
-            Map<String, DBConnectionRequest> loaded = objectMapper.readValue(storageFile, new TypeReference<Map<String, DBConnectionRequest>>() {
-            });
+            Map<String, DBConnectionRequest> loaded = objectMapper.readValue(
+                    storageFile, new TypeReference<Map<String, DBConnectionRequest>>() {});
             loaded.values().forEach(request -> {
                 try {
                     connectInternal(request, false);
@@ -45,11 +47,11 @@ public class DataSourceRegistry {
                 }
             });
         } catch (Exception e) {
-            log.warn("Lỗi đọc connections.json: {}", e.getMessage());
+            log.warn("Lỗi đọc file connections.json: {}", e.getMessage());
         }
     }
 
-    public DBConnectionRequest connectAndRegister(DBConnectionRequest request) throws Exception {
+    public DBConnectionRequest connectAndRegister(DBConnectionRequest request) {
         if (request.getId() == null || request.getId().isBlank()) {
             request.setId("db_" + UUID.randomUUID().toString().substring(0, 6));
         }
@@ -57,8 +59,7 @@ public class DataSourceRegistry {
         return request;
     }
 
-
-    public void connectInternal(DBConnectionRequest request, boolean persist) throws Exception {
+    public void connectInternal(DBConnectionRequest request, boolean persist) {
         String jdbcUrl = buildJdbcUrl(request);
         String driver = getDriverClassName(request.getDbType());
 
@@ -73,21 +74,21 @@ public class DataSourceRegistry {
         config.setConnectionTimeout(8000);
         config.setReadOnly(true);
 
-        HikariDataSource dataSource = new HikariDataSource(config);
-
-        try (Connection conn = dataSource.getConnection()) {
-            if(!conn.isValid(5)) {
-                dataSource.close();
-                throw new IllegalStateException("Kết nối Database thất bại hoặc timeout!");
+        HikariDataSource dataSource;
+        try {
+            dataSource = new HikariDataSource(config);
+            try (Connection conn = dataSource.getConnection()) {
+                if (!conn.isValid(5)) {
+                    dataSource.close();
+                    throw new DatabaseConnectionException("Kết nối Database thất bại: Connection không hợp lệ hoặc timeout!");
+                }
             }
-
         } catch (Exception e) {
-            dataSource.close();
-            throw e;
+            throw new DatabaseConnectionException("Không thể kết nối đến Database [" + request.getName() + "]: " + e.getMessage(), e);
         }
 
         HikariDataSource old = dataSources.put(request.getId(), dataSource);
-        if(old != null) {
+        if (old != null) {
             old.close();
         }
 
@@ -96,27 +97,32 @@ public class DataSourceRegistry {
         jdbcTemplates.put(request.getId(), jdbc);
         savedConfigs.put(request.getId(), request);
 
-        if(persist) {
+        if (persist) {
             saveToDisk();
         }
-         log.info("Đã kết nối thành công: {} ({})", request.getName(), jdbcUrl);
+        log.info("Đã kết nối thành công Database: {} ({})", request.getName(), jdbcUrl);
     }
 
-    private void saveToDisk () {
+    private void saveToDisk() {
         try {
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(storageFile, savedConfigs);
         } catch (Exception e) {
-            log.warn("Lỗi lưu connections.json: {}", e.getMessage());
+            log.warn("Lỗi lưu file connections.json: {}", e.getMessage());
         }
     }
 
     public void removeDatabase(String dbId) {
+        if (!savedConfigs.containsKey(dbId)) {
+            throw new DatabaseNotFoundException(dbId);
+        }
         savedConfigs.remove(dbId);
         jdbcTemplates.remove(dbId);
         HikariDataSource ds = dataSources.remove(dbId);
-        if(ds != null) {
+        if (ds != null) {
             ds.close();
         }
+        saveToDisk();
+        log.info("Đã xóa kết nối Database: {}", dbId);
     }
 
     private String buildJdbcUrl(DBConnectionRequest request) {
@@ -126,7 +132,7 @@ public class DataSourceRegistry {
                     request.getHost(), request.getPort(), request.getDatabase());
             case "POSTGRESQL" -> String.format("jdbc:postgresql://%s:%d/%s",
                     request.getHost(), request.getPort(), request.getDatabase());
-            default -> throw new IllegalArgumentException("Chưa hỗ trợ loại DB: " + type);
+            default -> throw new DatabaseConnectionException("Chưa hỗ trợ loại Database: " + type);
         };
     }
 
@@ -135,19 +141,23 @@ public class DataSourceRegistry {
         return switch (type) {
             case "MYSQL" -> "com.mysql.cj.jdbc.Driver";
             case "POSTGRESQL" -> "org.postgresql.Driver";
-            default -> throw new IllegalArgumentException("Chưa hỗ trợ loại DB: " + type);
+            default -> throw new DatabaseConnectionException("Chưa hỗ trợ loại Database: " + type);
         };
     }
 
     public DataSource getDataSource(String dbId) {
         DataSource ds = dataSources.get(dbId);
-        if (ds == null) throw new IllegalArgumentException("Chưa kết nối Database: " + dbId);
+        if (ds == null) {
+            throw new DatabaseNotFoundException(dbId);
+        }
         return ds;
     }
 
     public NamedParameterJdbcTemplate getJdbc(String dbId) {
         NamedParameterJdbcTemplate jdbc = jdbcTemplates.get(dbId);
-        if (jdbc == null) throw new IllegalArgumentException("Chưa kết nối Database: " + dbId);
+        if (jdbc == null) {
+            throw new DatabaseNotFoundException(dbId);
+        }
         return jdbc;
     }
 

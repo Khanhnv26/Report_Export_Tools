@@ -1,7 +1,10 @@
 package com.report.tool.service.impl;
 
 import com.report.tool.dto.response.ExcelColumnResponse;
+import com.report.tool.exception.TemplateNotFoundException;
+import com.report.tool.exception.TemplateProcessingException;
 import com.report.tool.service.ExcelTemplateService;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellReference;
 import org.springframework.stereotype.Service;
@@ -19,48 +22,72 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
+@Slf4j
 public class ExcelTemplateServiceImpl implements ExcelTemplateService {
 
     private final Path uploadDir = Path.of("templates");
 
-    public ExcelTemplateServiceImpl() throws IOException {
-        if(!Files.exists(uploadDir)) {
-            Files.createDirectories(uploadDir);
+    public ExcelTemplateServiceImpl() {
+        try {
+            if (!Files.exists(uploadDir)) {
+                Files.createDirectories(uploadDir);
+            }
+        } catch (IOException e) {
+            log.error("Không thể khởi tạo thư mục lưu trữ template: {}", e.getMessage());
+            throw new TemplateProcessingException("Không thể khởi tạo thư mục lưu trữ template", e);
         }
     }
 
     @Override
-    public String saveTemplate(MultipartFile file) throws IOException {
-        String safeName = UUID.randomUUID() + "_" + Objects.requireNonNull(file.getOriginalFilename());
+    public String saveTemplate(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new TemplateProcessingException("File tải lên rỗng hoặc không tồn tại!");
+        }
+
+        String originalName = Objects.requireNonNullElse(file.getOriginalFilename(), "template.xlsx");
+        if (!originalName.toLowerCase().endsWith(".xlsx")) {
+            throw new TemplateProcessingException("Chỉ chấp nhận file định dạng Excel (.xlsx)!");
+        }
+
+        String safeName = UUID.randomUUID() + "_" + originalName;
         Path target = uploadDir.resolve(safeName);
+
         try (InputStream in = file.getInputStream()) {
             Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            log.error("Lỗi khi lưu file template: {}", e.getMessage());
+            throw new TemplateProcessingException("Không thể lưu file template lên máy chủ", e);
         }
         return safeName;
     }
 
     @Override
-    public List<ExcelColumnResponse> readHeaders(String templateId, int headerRowIndex) throws Exception {
+    public List<ExcelColumnResponse> readHeaders(String templateId, int headerRowIndex) {
         Path path = uploadDir.resolve(templateId);
-        List<ExcelColumnResponse> cols = new ArrayList<>();
+        if (!Files.exists(path)) {
+            throw new TemplateNotFoundException(templateId);
+        }
 
+        List<ExcelColumnResponse> cols = new ArrayList<>();
         try (InputStream in = Files.newInputStream(path);
              Workbook workbook = WorkbookFactory.create(in)) {
 
             Sheet sheet = workbook.getSheetAt(0);
             Row headerRow = sheet.getRow(headerRowIndex);
 
-            if (headerRow == null) return cols;
+            if (headerRow == null) {
+                return cols;
+            }
 
             DataFormatter formatter = new DataFormatter();
-
             for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-
                 Cell cell = headerRow.getCell(i);
                 String letter = CellReference.convertNumToColString(i);
                 String title = (cell != null) ? formatter.formatCellValue(cell).trim() : "";
 
-                if (title.isEmpty()) title = "Cột " + letter;
+                if (title.isEmpty()) {
+                    title = "Cột " + letter;
+                }
 
                 cols.add(ExcelColumnResponse.builder()
                         .index(i)
@@ -68,25 +95,30 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
                         .title(title)
                         .build());
             }
-
         } catch (Exception e) {
-            throw new RuntimeException("Lỗi khi đọc header từ template", e);
+            log.error("Lỗi khi đọc header từ template [{}]: {}", templateId, e.getMessage());
+            throw new TemplateProcessingException("Lỗi khi đọc cấu trúc cột từ file Excel: " + e.getMessage(), e);
         }
 
         return cols;
     }
 
     @Override
-    public void fillTemplate(String templateId, int headerRowIndex, List<Map<String, Object>> rows, Map<String, String> mapping, OutputStream out) throws Exception {Path path = uploadDir.resolve(templateId);
+    public void fillTemplate(String templateId, int headerRowIndex, List<Map<String, Object>> rows, Map<String, String> mapping, OutputStream out) {
+        Path path = uploadDir.resolve(templateId);
+        if (!Files.exists(path)) {
+            throw new TemplateNotFoundException(templateId);
+        }
 
         try (InputStream in = Files.newInputStream(path);
              Workbook workbook = WorkbookFactory.create(in)) {
+
             Sheet sheet = workbook.getSheetAt(0);
 
             CellStyle dateStyle = workbook.createCellStyle();
             CreationHelper createHelper = workbook.getCreationHelper();
-
             dateStyle.setDataFormat(createHelper.createDataFormat().getFormat("dd/MM/yyyy HH:mm:ss"));
+
             int currentRowIdx = headerRowIndex + 1;
             for (Map<String, Object> dataRow : rows) {
                 Row row = sheet.getRow(currentRowIdx);
@@ -94,22 +126,26 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
                     row = sheet.createRow(currentRowIdx);
                 }
                 currentRowIdx++;
+
                 for (Map.Entry<String, String> entry : mapping.entrySet()) {
                     String colLetter = entry.getKey();
                     String fieldKey = entry.getValue();
                     if (fieldKey == null || fieldKey.isBlank()) continue;
+
                     int colIdx = CellReference.convertColStringToIndex(colLetter);
                     Cell cell = row.getCell(colIdx);
                     if (cell == null) {
                         cell = row.createCell(colIdx);
                     }
+
                     Object value = dataRow.get(fieldKey);
                     setCellValueByType(cell, value, dateStyle);
                 }
             }
             workbook.write(out);
         } catch (Exception e) {
-            throw new RuntimeException("Lỗi khi điền dữ liệu vào template", e);
+            log.error("Lỗi khi ghi dữ liệu vào template [{}]: {}", templateId, e.getMessage());
+            throw new TemplateProcessingException("Lỗi khi tạo file Excel tổng hợp: " + e.getMessage(), e);
         }
     }
 
