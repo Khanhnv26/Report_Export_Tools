@@ -385,6 +385,14 @@ small, .help {
   margin-bottom: 8px;
 }
 
+.sidebar-card .section-heading {
+  margin: 0 0 6px;
+}
+
+.sidebar-card .section-heading h2 {
+  margin-bottom: 0;
+}
+
 .sidebar-card p {
   font-size: 12px;
   margin: 0 0 12px;

@@ -15,12 +15,17 @@
   <div class="workspace" v-if="view==='report'">
     <aside class="sidebar">
       <div class="sidebar-card">
-        <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
+        <div class="section-heading">
+          <h2>Mẫu báo cáo</h2>
+          <button class="text-button" @click="startNewProfile" title="Bắt đầu tạo mẫu mới">+ Mẫu mới</button>
+        </div>
+        <p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
         <label for="profile">Mẫu đã lưu</label>
         <select id="profile" v-model="selectedProfile" @change="loadProfile">
           <option value="" disabled :selected="!selectedProfile">-- Chọn mẫu đã lưu --</option>
           <option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option>
         </select>
+        <button class="wide" @click="startNewProfile">+ Tạo mẫu báo cáo mới</button>
         <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
         <button class="wide" @click="showProfilesModal = true">Quản lý tất cả mẫu ({{ Object.keys(savedProfiles).length }})</button>
       </div>
@@ -164,12 +169,16 @@
     <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="profiles-modal-title">
       <div class="section-heading">
         <h2 id="profiles-modal-title">Quản lý mẫu báo cáo đã lưu</h2>
-        <button @click="showProfilesModal = false" aria-label="Đóng">×</button>
+        <div class="button-group">
+          <button class="primary" @click="startNewProfile">+ Thêm mẫu mới</button>
+          <button @click="showProfilesModal = false" aria-label="Đóng">×</button>
+        </div>
       </div>
       <p class="muted">Các mẫu được lưu trên trình duyệt này để bạn tái sử dụng nhanh.</p>
       <div v-if="!Object.keys(savedProfiles).length" class="empty-preview" style="margin:20px 0">
         <h2>Chưa có mẫu nào</h2>
         <p>Thiết lập các bước báo cáo rồi bấm “Lưu cấu hình thành mẫu” để lưu.</p>
+        <button class="primary" @click="startNewProfile">+ Tạo mẫu đầu tiên</button>
       </div>
       <div v-else class="table-wrap" style="margin:16px 0; max-height:420px">
         <table>

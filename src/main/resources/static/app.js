@@ -369,6 +369,25 @@ createApp({
       try { this.savedProfiles = JSON.parse(localStorage.getItem('saved_report_profiles') || '{}'); }
       catch (_) { this.savedProfiles = {}; this.toast('Không đọc được mẫu đã lưu trong trình duyệt.', 'info'); }
     },
+    async startNewProfile() {
+      const isDirty = this.selectedProfile || (this.config.baseTable && this.config.baseTable.dbId) || (this.config.outputColumns && this.config.outputColumns.length);
+      if (isDirty) {
+        if (!await this.ask('Tạo mẫu báo cáo mới?', 'Hệ thống sẽ làm mới cấu hình về mặc định để bạn bắt đầu tạo mẫu mới từ Bước 1.', { confirm: 'Tạo mới' })) return false;
+      }
+      this.config = emptyConfig();
+      this.selectedProfile = '';
+      this.templateFileName = '';
+      this.baseTables = [];
+      this.baseColumns = [];
+      this.excelColumns = [];
+      this.preview = null;
+      this.previewSignature = '';
+      this.errors = {};
+      this.step = 1;
+      this.showProfilesModal = false;
+      this.toast('Đã làm mới để bắt đầu tạo mẫu báo cáo mới.');
+      return true;
+    },
     async saveCurrentProfile() {
       const name = await this.ask('Lưu mẫu báo cáo', 'Mẫu lưu cấu hình nguồn, cột và bộ lọc trên trình duyệt này.', { input: true, value: this.selectedProfile, confirm: 'Lưu mẫu' });
       if (!name) return;
