@@ -30,17 +30,26 @@ public class TemplateController {
         return ResponseEntity.ok(ApiResponse.success(templateService.readHeaders(templateId, headerRow)));
     }
 
+    @GetMapping("/{templateId}/detect-header")
+    public ResponseEntity<ApiResponse<Integer>> detectHeader(@PathVariable String templateId) {
+        return ResponseEntity.ok(ApiResponse.success(templateService.detectHeaderRow(templateId)));
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<TemplateUploadResponse>> uploadTemplate(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "headerRow", defaultValue = "0") int headerRow) {
+            @RequestParam(value = "headerRow", required = false) Integer headerRow) {
 
         String templateId = templateService.saveTemplate(file);
-        List<ExcelColumnResponse> columns = templateService.readHeaders(templateId, headerRow);
+        int targetHeaderRow = (headerRow != null && headerRow >= 0)
+                ? headerRow
+                : templateService.detectHeaderRow(templateId);
+        List<ExcelColumnResponse> columns = templateService.readHeaders(templateId, targetHeaderRow);
 
         TemplateUploadResponse response = TemplateUploadResponse.builder()
                 .templateId(templateId)
                 .columns(columns)
+                .headerRow(targetHeaderRow)
                 .build();
 
         return ResponseEntity.status(HttpStatus.CREATED)

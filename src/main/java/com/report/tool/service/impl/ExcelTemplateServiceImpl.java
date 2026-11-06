@@ -72,6 +72,78 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
     }
 
     @Override
+    public int detectHeaderRow(String templateId) {
+        Path path = templatePath(templateId);
+        try (InputStream in = Files.newInputStream(path);
+             Workbook workbook = WorkbookFactory.create(in)) {
+
+            Sheet sheet = workbook.getSheetAt(0);
+            int maxRow = Math.min(sheet.getLastRowNum(), 30);
+            int bestRow = 0;
+            int maxScore = -1;
+            DataFormatter formatter = new DataFormatter();
+
+            for (int r = 0; r <= maxRow; r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) {
+                    continue;
+                }
+
+                int stringCount = 0;
+                int filledCount = 0;
+                int boldCount = 0;
+
+                for (int c = 0; c < row.getLastCellNum(); c++) {
+                    Cell cell = row.getCell(c);
+                    if (cell == null) {
+                        continue;
+                    }
+                    String text = formatter.formatCellValue(cell).trim();
+                    if (text.isEmpty()) {
+                        continue;
+                    }
+                    filledCount++;
+
+                    CellType type = cell.getCellType();
+                    if (type == CellType.FORMULA) {
+                        type = cell.getCachedFormulaResultType();
+                    }
+                    if (type == CellType.STRING || type == CellType.BLANK) {
+                        stringCount++;
+                    }
+
+                    CellStyle style = cell.getCellStyle();
+                    if (style != null) {
+                        Font font = workbook.getFontAt(style.getFontIndex());
+                        if (font != null && font.getBold()) {
+                            boldCount++;
+                        }
+                    }
+                }
+
+                if (filledCount == 0) {
+                    continue;
+                }
+
+                int score = (stringCount * 10) + (boldCount * 5) + filledCount;
+                if (filledCount == 1) {
+                    score -= 15;
+                }
+
+                if (score > maxScore) {
+                    maxScore = score;
+                    bestRow = r;
+                }
+            }
+
+            return bestRow;
+        } catch (Exception e) {
+            log.error("Lỗi khi phát hiện header row cho template [{}]: {}", templateId, e.getMessage());
+            return 0;
+        }
+    }
+
+    @Override
     public List<ExcelColumnResponse> readHeaders(String templateId, int headerRowIndex) {
         Path path = templatePath(templateId);
         validateHeaderRow(headerRowIndex);

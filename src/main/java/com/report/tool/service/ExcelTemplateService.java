@@ -12,6 +12,8 @@ public interface ExcelTemplateService {
 
     String saveTemplate(MultipartFile file);
 
+    int detectHeaderRow(String templateId);
+
     List<ExcelColumnResponse> readHeaders(String templateId, int headerRowIndex);
 
     void fillTemplate(String templateId,

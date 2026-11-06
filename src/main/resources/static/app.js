@@ -212,13 +212,27 @@ createApp({
       const file = event.target.files[0]; if (!file) return;
       if (!file.name.toLowerCase().endsWith('.xlsx') || file.size > 50 * 1024 * 1024) { this.errors.template = 'Chọn file .xlsx không quá 50 MB.'; return; }
       this.uploadLoading = true; this.errors.template = '';
-      const form = new FormData(); form.append('file', file); form.append('headerRow', this.config.headerRow);
+      const form = new FormData(); form.append('file', file);
       try {
         const result = await this.api('/api/templates', { method: 'POST', body: form });
         this.config.templateId = result.templateId; this.templateFileName = file.name; this.excelColumns = result.columns;
-        this.templateColumns(); this.toast('Đã đọc cấu trúc template.');
+        if (typeof result.headerRow === 'number') this.config.headerRow = result.headerRow;
+        this.templateColumns(); this.toast(`Đã đọc cấu trúc template (dòng tiêu đề: ${this.config.headerRow + 1}).`);
       } catch (error) { this.showError('Không tải được template', error); }
       finally { this.uploadLoading = false; event.target.value = ''; }
+    },
+    async autoDetectHeader() {
+      if (!this.config.templateId) return;
+      this.uploadLoading = true;
+      try {
+        const detected = await this.api(`/api/templates/${encodeURIComponent(this.config.templateId)}/detect-header`);
+        if (typeof detected === 'number') {
+          this.config.headerRow = detected;
+          await this.refreshHeaders();
+          this.toast(`Đã phát hiện dòng tiêu đề: ${this.config.headerRow + 1}`);
+        }
+      } catch (error) { this.showError('Không tự động phát hiện được dòng tiêu đề', error); }
+      finally { this.uploadLoading = false; }
     },
     templateColumns() {
       const old = this.config.outputColumns;

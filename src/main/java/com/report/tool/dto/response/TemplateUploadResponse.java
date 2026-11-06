@@ -14,4 +14,5 @@ import java.util.List;
 public class TemplateUploadResponse {
     private String templateId;
     private List<ExcelColumnResponse> columns;
+    private Integer headerRow;
 }
