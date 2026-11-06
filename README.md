@@ -40,23 +40,23 @@ Khi cần xuất các báo cáo đối soát tổng hợp (ví dụ: *Đơn hàn
 
 ```mermaid
 flowchart TD
-    UI["Web Studio UI (Vue 3 + Tailwind)"] -->|1. Upload Template & Map Fields| Controller["Spring Boot REST API"]
+    UI["Web Studio UI (Vue 3 + Tailwind)"] -->|"1. Upload Template & Map Fields"| Controller["Spring Boot REST API"]
     
     subgraph Engine ["Report Engine (Memory Tier)"]
-        Controller -->|2. Query Base Table| Pool1["HikariCP Pool: MySQL/Postgres"]
-        Pool1 -->|Fetch 50k rows| RawData["Base Rows in RAM"]
-        RawData -->|3. Extract Keys & Batch 1000 IDs| Pool2["HikariCP Pool: MSSQL/Oracle"]
-        Pool2 -->|Batch IN-Query| SubData["Sub-Service Rows"]
-        SubData -->|4. Hash-Join O(1) Lookup| MergedData["Merged Master Dataset"]
+        Controller -->|"2. Query Base Table"| Pool1["HikariCP Pool: MySQL / Postgres"]
+        Pool1 -->|"Fetch rows"| RawData["Base Rows in RAM"]
+        RawData -->|"3. Extract Keys & Batch 1000 IDs"| Pool2["HikariCP Pool: MSSQL / Oracle"]
+        Pool2 -->|"Batch IN-Query"| SubData["Sub-Service Rows"]
+        SubData -->|"4. In-Memory Hash-Join"| MergedData["Merged Master Dataset"]
     end
 
     subgraph ExcelExporter ["Excel Stream Engine"]
         MergedData --> POI["Apache POI 5.2.5"]
         Template[".xlsx Template File"] --> POI
-        POI -->|5. Clone CellStyle & Fill Cells| OutputStream["HTTP Response OutputStream"]
+        POI -->|"5. Clone Style & Fill Cells"| OutputStream["HTTP Response OutputStream"]
     end
 
-    OutputStream -->|Direct Download| Browser["User Browser (.xlsx)"]
+    OutputStream -->|"Direct Download"| Browser["User Browser (.xlsx)"]
 ```
 
 ---
