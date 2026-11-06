@@ -17,6 +17,30 @@ import java.util.Map;
 public class ReportConfigRequest {
 
     private String templateId;
+    private String outputMode;
+    @Builder.Default
+    private List<OutputColumn> outputColumns = new ArrayList<>();
+    @Builder.Default
+    private List<Filter> filters = new ArrayList<>();
+    private String sortField;
+    @Builder.Default
+    private String sortDirection = "ASC";
+
+    @Data @NoArgsConstructor @AllArgsConstructor @Builder
+    public static class OutputColumn {
+        private String field;
+        private String title;
+        private String letter;
+        @Builder.Default private String type = "AUTO";
+        @Builder.Default private String format = "GENERAL";
+    }
+
+    @Data @NoArgsConstructor @AllArgsConstructor @Builder
+    public static class Filter {
+        private String field;
+        private String operator;
+        private String value;
+    }
 
     @Builder.Default
     private int headerRow = 0;

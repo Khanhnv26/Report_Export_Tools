@@ -9,6 +9,8 @@ import com.report.tool.exception.ReportExecutionException;
 import com.report.tool.exception.ReportBusyException;
 import com.report.tool.helper.DataSourceRegistry;
 import com.report.tool.helper.SqlBuilder;
+import com.report.tool.helper.ReportQueries;
+import com.report.tool.service.ReportCancellation;
 import com.report.tool.service.ReportEngineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,10 +67,11 @@ public class ReportEngineServiceImpl implements ReportEngineService {
                 base.getTableName(), sourceColumns.get(baseAlias), base.getFilterColumn(), params.hasValue("fromDate"));
         try {
             NamedParameterJdbcTemplate jdbc = registry.getJdbc(base.getDbId());
-            List<Map<String, Object>> rawRows = jdbc.query(sql, params, sqlBuilder.rowMapper(registry.getDatabaseType(base.getDbId())));
+            List<Map<String, Object>> rawRows = ReportQueries.query(jdbc, sql, params, sqlBuilder.rowMapper(registry.getDatabaseType(base.getDbId())));
             checkLimit(rawRows.size());
             List<Map<String, Object>> rows = new ArrayList<>();
             for (Map<String, Object> raw : rawRows) {
+                ReportCancellation.check();
                 Map<String, Object> row = new LinkedHashMap<>();
                 raw.forEach((column, value) -> {
                     row.put(baseAlias + "." + column, value);
@@ -80,6 +83,8 @@ public class ReportEngineServiceImpl implements ReportEngineService {
                 rows = join(rows, join, sourceColumns, limit, preview);
             }
             return rows;
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {
@@ -179,8 +184,9 @@ public class ReportEngineServiceImpl implements ReportEngineService {
         int fetched = 0;
         for (int i = 0; i < keys.size(); i += batchSize) {
             List<Object> batch = keys.subList(i, Math.min(i + batchSize, keys.size()));
-            List<Map<String, Object>> targetRows = jdbc.query(sql,
-                    Map.of("keys", batch, "rowLimit", maxRows - fetched + 1), sqlBuilder.rowMapper(dbType));
+            ReportCancellation.check();
+            List<Map<String, Object>> targetRows = ReportQueries.query(jdbc, sql,
+                    new MapSqlParameterSource().addValue("keys", batch).addValue("rowLimit", maxRows - fetched + 1), sqlBuilder.rowMapper(dbType));
             fetched += targetRows.size();
             checkLimit(fetched);
             for (Map<String, Object> target : targetRows) {
@@ -190,6 +196,7 @@ public class ReportEngineServiceImpl implements ReportEngineService {
         }
         List<Map<String, Object>> result = new ArrayList<>();
         for (Map<String, Object> row : rows) {
+            ReportCancellation.check();
             Object key = row.get(join.getSourceKey());
             List<Map<String, Object>> matches = key == null ? null : lookup.get(normalizeKey(key));
             if (matches == null) matches = Collections.singletonList(Collections.emptyMap());

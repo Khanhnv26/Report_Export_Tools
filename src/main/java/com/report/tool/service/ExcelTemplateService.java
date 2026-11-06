@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 public interface ExcelTemplateService {
+    org.apache.poi.ss.usermodel.Workbook openTemplate(String templateId);
 
     String saveTemplate(MultipartFile file);
 

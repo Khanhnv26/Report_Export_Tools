@@ -1,456 +1,102 @@
-<!DOCTYPE html>
-<html lang="vi" class="dark">
+<!doctype html>
+<html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Report Export Tool</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#eff6ff',
-              500: '#3b82f6',
-              600: '#2563eb',
-              700: '#1d4ed8'
-            }
-          }
-        }
-      }
-    }
-  </script>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <style>
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 9999px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
-  </style>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Report Workspace</title>
+  <link rel="stylesheet" href="/app.css">
+  <script defer src="/vendor/vue.global.prod.js"></script><script defer src="/app.js"></script>
 </head>
-<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 antialiased min-h-screen text-xs flex flex-col transition-colors duration-200">
+<body>
+<div id="app" v-cloak>
+  <header class="topbar"><a class="brand" href="/">Report Workspace</a><span class="muted">Tổng hợp dữ liệu · Xuất Excel</span>
+    <nav aria-label="Khu vực"><button :class="{selected:view==='report'}" @click="view='report'">Báo cáo</button><button :class="{selected:view==='sources'}" @click="view='sources'">Thiết lập nguồn</button></nav>
+  </header>
+  <div class="workspace" v-if="view==='report'">
+    <aside class="sidebar">
+      <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
+      <label for="profile">Mẫu đã lưu</label><select id="profile" v-model="selectedProfile" @change="loadProfile"><option value="">Chọn mẫu…</option><option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option></select>
+      <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
+      <ol class="steps"><li v-for="(title,index) in steps" :key="title"><button :class="{current:step===index+1}" @click="step=index+1" :aria-current="step===index+1?'step':null"><span class="step-number">{{ index+1 }}</span>{{ title }}</button></li></ol>
+      <p class="sidebar-note">Mẫu được lưu trên trình duyệt này.<br>Giới hạn mặc định: 50.000 dòng.</p>
+      <div v-if="job" class="sidebar-job"><strong>Xuất báo cáo</strong><p role="status">{{ job.message }}</p><button @click="step=4">Xem tác vụ</button></div>
+    </aside>
+    <main>
+      <div class="page-heading"><div><p class="eyebrow">Bước {{ step }} / 4</p><h1>{{ steps[step-1] }}</h1></div><span v-if="metadataLoading" class="muted" role="status">Đang tải cấu trúc nguồn…</span></div>
 
-  <div id="app" class="flex-1 flex flex-col">
-
-    <header class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3 flex items-center justify-between sticky top-0 z-30 shadow-xs">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>
-            <rect width="20" height="8" x="2" y="14" rx="2" ry="2"/>
-            <line x1="6" x2="6.01" y1="6" y2="6"/>
-            <line x1="6" x2="6.01" y1="18" y2="18"/>
-          </svg>
+      <section v-if="step===1" aria-label="Cấu hình nguồn">
+        <p class="lead">Chọn dữ liệu cho báo cáo. Nếu đã có mẫu, bạn chỉ cần kiểm tra nguồn và chuyển đến bộ lọc.</p>
+        <p v-if="errors.source" class="field-error" role="alert">{{ errors.source }}</p>
+        <div class="section-heading"><h2>Bảng gốc</h2><button @click="view='sources'">Quản lý kết nối</button></div>
+        <div class="form-grid three">
+          <label>Database<select aria-label="Database" v-model="config.baseTable.dbId" @change="onBaseDbChange"><option value="">Chọn kết nối…</option><option v-for="db in databases" :key="db.id" :value="db.id">{{ db.name }}{{ db.connected?'':' · cần kết nối lại' }}</option></select></label>
+          <label>Bảng<select aria-label="Bảng" v-model="config.baseTable.tableName" @change="onBaseTableChange"><option value="">Chọn bảng…</option><option v-for="table in baseTables" :key="table">{{ table }}</option></select></label>
+          <label>Tên nguồn (alias)<input v-model="config.baseTable.alias" @change="syncOutputColumns" placeholder="Mặc định dùng tên bảng"><span class="help">Dùng tên riêng khi ghép các bảng trùng tên.</span></label>
         </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="font-bold text-sm tracking-tight text-slate-900 dark:text-white">Report Export Tool</h1>
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> {{ databases.length }} DB Active
-            </span>
-          </div>
-          <p class="text-[11px] text-slate-500 dark:text-slate-400">Microservice Data Aggregation & Excel Stream Engine</p>
+        <div v-if="baseColumns.length" class="field-picker"><div class="section-heading"><label for="column-search">Cột nguồn · {{ config.baseTable.columns.length }} đã chọn</label><div class="button-group"><button @click="selectAllBase(true)">Chọn tất cả</button><button @click="selectAllBase(false)">Bỏ chọn</button></div></div><input id="column-search" type="search" v-model="sourceSearch" placeholder="Tìm tên cột…"><div class="checks"><label v-for="column in filteredBaseColumns" :key="column.name"><input type="checkbox" :value="column.name" v-model="config.baseTable.columns" @change="syncOutputColumns"><span>{{ column.name }}<small>{{ column.type }}</small></span></label></div></div>
+        <div class="section-heading spaced"><div><h2>Ghép dữ liệu từ nguồn khác</h2><p class="muted">Không khớp vẫn giữ dòng gốc. Một khóa khớp nhiều bản ghi sẽ tạo nhiều dòng.</p></div><button @click="addJoinTable">Thêm nguồn ghép</button></div>
+        <p v-if="!config.joins.length" class="empty-inline">Chưa thêm bảng phụ. Bạn có thể xuất dữ liệu chỉ từ bảng gốc.</p>
+        <details v-for="(join,index) in config.joins" :key="index" class="join" open>
+          <summary>Nguồn {{ index+1 }} · {{ join.alias || join.tableName || 'Chưa chọn bảng' }}</summary>
+          <div class="form-grid three"><label>Database<select v-model="join.dbId" @change="onJoinDbChange(join)"><option value="">Chọn kết nối…</option><option v-for="db in databases" :key="db.id" :value="db.id">{{ db.name }}</option></select></label><label>Bảng phụ<select v-model="join.tableName" @change="onJoinTableChange(join)"><option value="">Chọn bảng…</option><option v-for="table in join.availableTables" :key="table">{{ table }}</option></select></label><label>Alias<input v-model="join.alias" @change="syncOutputColumns"></label></div>
+          <div class="form-grid two"><label>Khóa từ nguồn đã có<select v-model="join.sourceKey"><option value="">Chọn khóa nguồn…</option><option v-for="field in sourceKeys(index)" :key="field">{{ field }}</option></select></label><label>Khóa khớp ở bảng phụ<select v-model="join.targetKey"><option value="">Chọn khóa đích…</option><option v-for="column in join.availableColumns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label></div>
+          <div class="checks compact"><label v-for="column in join.availableColumns" :key="column.name"><input type="checkbox" :value="column.name" v-model="join.columns" @change="syncOutputColumns"><span>{{ column.name }}</span></label></div><button class="danger-text" @click="removeJoinTable(index)">Bỏ nguồn ghép</button>
+        </details>
+      </section>
+
+      <section v-if="step===2" aria-label="Cấu hình cột đầu ra">
+        <p class="lead">Chọn cấu trúc file, tên cột và cách hiển thị giá trị trong Excel.</p>
+        <fieldset class="mode-picker"><legend>Cách xuất</legend><label><input type="radio" value="TABLE" v-model="config.outputMode" @change="changeOutputMode"><span><strong>Bảng Excel mới</strong><small>Tự đặt tiêu đề, thứ tự và định dạng cột.</small></span></label><label><input type="radio" value="TEMPLATE" v-model="config.outputMode" @change="changeOutputMode"><span><strong>Dùng file mẫu</strong><small>Điền vào các cột của sheet đầu tiên.</small></span></label></fieldset>
+        <div v-if="isTemplate" class="template-upload form-grid two"><label>File Excel mẫu<input type="file" accept=".xlsx" @change="handleFileUpload" :disabled="uploadLoading"><span class="help">{{ uploadLoading?'Đang đọc file…':templateFileName || '.xlsx · tối đa 50 MB' }}</span></label><label>Dòng tiêu đề<input type="number" min="1" :value="config.headerRow+1" @change="config.headerRow=Math.max(0,Number($event.target.value)-1);onHeaderRowChange()"><span class="help">Nhập số dòng như hiển thị trong Excel.</span></label></div>
+        <p v-if="errors.template || errors.output" class="field-error" role="alert">{{ errors.template || errors.output }}</p>
+        <div class="section-heading"><h2>{{ config.outputColumns.length }} cột đầu ra</h2><div class="button-group"><button v-if="isTemplate" @click="smartAutoMatch">Ghép tên trùng nhau</button><template v-else><button @click="syncOutputColumns">Thêm các cột nguồn còn thiếu</button><button @click="addOutputColumn">Thêm cột</button></template></div></div>
+        <p class="muted">{{ isTemplate?'Thứ tự và tiêu đề theo file mẫu. Cột chưa chọn trường nguồn sẽ được bỏ qua.':'Kéo dòng hoặc dùng nút lên / xuống để đổi thứ tự. Bỏ cột không cần xuất bằng nút Xóa.' }}</p>
+        <div class="table-wrap"><table class="output-table"><thead><tr><th scope="col">{{ isTemplate?'Cột Excel':'Thứ tự' }}</th><th scope="col">Tiêu đề đầu ra</th><th scope="col">Trường nguồn</th><th scope="col">Kiểu dữ liệu</th><th scope="col">Định dạng</th><th scope="col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody>
+          <tr v-for="(column,index) in config.outputColumns" :key="index" :draggable="!isTemplate" @dragstart="draggedColumn=index" @dragover.prevent @drop.prevent="moveColumn(draggedColumn,index)">
+            <td><template v-if="isTemplate">{{ column.letter }}</template><div v-else class="reorder"><span>{{ index+1 }}</span><button :disabled="index===0" @click="moveColumn(index,index-1)" :aria-label="'Đưa cột '+column.title+' lên'">↑</button><button :disabled="index===config.outputColumns.length-1" @click="moveColumn(index,index+1)" :aria-label="'Đưa cột '+column.title+' xuống'">↓</button></div></td>
+            <td><input v-model="column.title" :readonly="isTemplate" :aria-label="'Tiêu đề cột '+(index+1)"></td>
+            <td><select v-model="column.field" :aria-label="'Trường nguồn cột '+(index+1)"><option value="">{{ isTemplate?'Bỏ qua cột này':'Chọn trường…' }}</option><option v-for="field in allSelectedFields" :key="field">{{ field }}</option></select></td>
+            <td><select v-model="column.type" :aria-label="'Kiểu dữ liệu cột '+(index+1)"><option v-for="type in types" :key="type.id" :value="type.id">{{ type.label }}</option></select></td>
+            <td><select v-model="column.format" :aria-label="'Định dạng cột '+(index+1)"><option v-for="format in formats" :key="format.id" :value="format.id">{{ format.label }}</option></select></td>
+            <td><button v-if="!isTemplate" class="text-button" @click="config.outputColumns.splice(index,1)" :aria-label="'Xóa cột '+column.title">Xóa</button></td>
+          </tr>
+        </tbody></table></div><p v-if="!config.outputColumns.length" class="empty-inline">Chọn cột nguồn ở bước 1 để thiết lập đầu ra.</p>
+        <p class="help spaced">Dùng kiểu Chữ cho mã, số điện thoại hoặc ID dài. Kiểu Số sẽ báo lỗi nếu giá trị vượt độ chính xác Excel.</p>
+      </section>
+
+      <section v-if="step===3" aria-label="Bộ lọc">
+        <p class="lead">Thu hẹp dữ liệu trước khi xuất. Bộ lọc ngày ở bảng gốc được thực thi ngay tại database.</p>
+        <p v-if="errors.filter" class="field-error" role="alert">{{ errors.filter }}</p><h2>Khoảng ngày của bảng gốc</h2>
+        <div class="form-grid three"><label>Cột ngày<select v-model="config.baseTable.filterColumn"><option value="">Không lọc ngày</option><option v-for="column in baseColumns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label><label>Từ ngày<input type="date" v-model="config.baseTable.fromDate"></label><label>Đến hết ngày<input type="date" v-model="config.baseTable.toDate"></label></div>
+        <div class="section-heading spaced"><div><h2>Điều kiện sau khi ghép</h2><p class="muted">Các điều kiện được kết hợp bằng “VÀ”.</p></div><button @click="addFilter" :disabled="config.filters.length>=20">Thêm điều kiện</button></div>
+        <div v-for="(filter,index) in config.filters" :key="index" class="filter-row"><label><span class="sr-only">Trường lọc</span><select v-model="filter.field"><option v-for="field in allSelectedFields" :key="field">{{ field }}</option></select></label><label><span class="sr-only">Phép so sánh</span><select v-model="filter.operator"><option v-for="operator in operators" :key="operator.id" :value="operator.id">{{ operator.label }}</option></select></label><label v-if="!['EMPTY','NOT_EMPTY'].includes(filter.operator)"><span class="sr-only">Giá trị lọc</span><input v-model="filter.value" placeholder="Giá trị so sánh"></label><span v-else></span><button @click="config.filters.splice(index,1)" aria-label="Bỏ điều kiện lọc">Bỏ</button></div>
+        <p v-if="!config.filters.length" class="empty-inline">Chưa thêm điều kiện sau ghép.</p><h2 class="spaced">Sắp xếp kết quả</h2><div class="form-grid two"><label>Theo trường<select v-model="config.sortField"><option value="">Giữ thứ tự đọc được</option><option v-for="field in allSelectedFields" :key="field">{{ field }}</option></select></label><label>Chiều sắp xếp<select v-model="config.sortDirection" :disabled="!config.sortField"><option value="ASC">Tăng dần</option><option value="DESC">Giảm dần</option></select></label></div>
+        <p class="notice" v-if="config.filters.length || config.sortField">Preview sẽ đọc đủ dữ liệu trong giới hạn báo cáo để áp dụng lọc và sắp xếp chính xác. Thao tác này có thể mất thêm thời gian.</p>
+      </section>
+
+      <section v-if="step===4" aria-label="Xem trước và xuất">
+        <div class="section-heading"><p class="lead">Kiểm tra kết quả trước khi tạo file.</p><div class="button-group"><button v-if="previewLoading" @click="stopPreview">Dừng chờ</button><button @click="fetchPreview" :disabled="previewLoading">{{ previewLoading?'Đang xử lý…':preview?'Cập nhật preview':'Tạo preview' }}</button><button class="primary" :disabled="!canExport" @click="exportReport">{{ exportLoading?'Đang gửi…':'Tạo file Excel' }}</button></div></div>
+        <div v-if="previewLoading" class="notice" role="status">Đang đọc dữ liệu và áp dụng cấu hình đầu ra. Bạn có thể tiếp tục chỉnh cấu hình.</div>
+        <div v-if="previewStale" class="notice warning" role="status">Cấu hình đã thay đổi. Cập nhật preview trước khi xuất file.</div>
+        <div v-if="preview">
+          <p class="preview-meta">{{ preview.rows.length }} dòng hiển thị · {{ preview.sampled?'Dữ liệu mẫu':'Đã xử lý '+preview.processedRows.toLocaleString('vi-VN')+' dòng' }} · {{ (preview.elapsedMillis/1000).toFixed(2) }} giây</p>
+          <ul v-if="preview.warnings.length" class="notice warning"><li v-for="warning in preview.warnings" :key="warning">{{ warning }}{{ preview.sampled?' (Trong dữ liệu mẫu.)':'' }}</li></ul>
+          <div class="table-wrap preview-scroll" :class="{'is-stale':previewStale}" :aria-busy="previewLoading"><table class="preview-table"><thead><tr><th scope="col" class="row-number">#</th><th v-for="(column,index) in preview.columns" :key="index" scope="col"><small v-if="isTemplate">{{ column.letter }} · </small>{{ column.title }}</th></tr></thead><tbody><tr v-for="(row,index) in preview.rows" :key="index"><th scope="row" class="row-number">{{ index+1 }}</th><td v-for="(value,column) in row" :key="column" :class="{blank:value===''}">{{ value===''?'—':value }}</td></tr></tbody></table></div>
+          <p v-if="!preview.rows.length" class="empty-inline">Không có dòng phù hợp. Kiểm tra lại bộ lọc.</p><p class="help spaced">Preview dùng cùng quy tắc chuyển kiểu và định dạng với file xuất. Dữ liệu được đọc lại khi tạo file. Với template, bảng này hiển thị các cột đã ánh xạ.</p>
         </div>
-      </div>
+        <div v-else-if="!previewLoading" class="empty-preview"><h2>Chưa có preview</h2><p>Kiểm tra nguồn, chọn cột đầu ra, sau đó bấm “Tạo preview”.</p><button @click="fetchPreview">Tạo preview</button></div>
+        <section v-if="job" class="job-panel" aria-label="Tác vụ xuất"><div class="section-heading"><h2>File báo cáo</h2><span class="status" :class="job.state.toLowerCase()">{{ {QUEUED:'Đang chờ',QUERYING:'Đang đọc dữ liệu',PREPARING:'Đang chuẩn bị',WRITING:'Đang ghi file',READY:'Sẵn sàng',FAILED:'Thất bại',CANCELLED:'Đã hủy'}[job.state] }}</span></div><p role="status">{{ job.message }}</p><p class="muted">Tác vụ dùng cấu hình tại lúc bấm tạo file. File có hiệu lực tối đa một giờ nếu không được truy cập.</p><p v-if="job.state==='READY'"><strong>{{ job.rowCount.toLocaleString('vi-VN') }}</strong> dòng kết quả</p><ul v-if="job.warnings.length" class="notice warning"><li v-for="warning in job.warnings" :key="warning">{{ warning }}</li></ul><p v-if="jobPollingError" class="field-error">{{ jobPollingError }} <button @click="pollJob(job.id)">Thử lại</button></p><div class="button-group"><button v-if="activeJob" class="danger-text" @click="cancelJob">Hủy tác vụ</button><button v-if="job.state==='READY'" class="primary" @click="downloadJob">Tải file Excel</button><button v-if="job.state==='FAILED' || job.state==='CANCELLED'" @click="exportReport" :disabled="!canExport">Tạo lại</button></div></section>
+      </section>
 
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-lg px-2.5 py-1">
-          <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
-          </svg>
-          <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Mẫu:</span>
-          <select v-model="selectedProfile" @change="loadProfile" class="bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer">
-            <option value="">-- Cấu hình hiện tại --</option>
-            <option v-for="(p, name) in savedProfiles" :key="name" :value="name">{{ name }}</option>
-          </select>
-        </div>
-
-        <button @click="saveCurrentProfile" class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium flex items-center gap-1.5 shadow-xs transition">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"/>
-          </svg>
-          Lưu mẫu
-        </button>
-
-        <button @click="toggleTheme" class="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 transition" title="Đổi giao diện Sáng / Tối">
-          <svg v-if="isDark" class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <circle cx="12" cy="12" r="4"/>
-            <path stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41m14.14-14.14l-1.41 1.41"/>
-          </svg>
-          <svg v-else class="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/>
-          </svg>
-        </button>
-      </div>
-    </header>
-
-    <div class="flex-1 grid grid-cols-12 divide-x divide-slate-200 dark:divide-slate-800 overflow-hidden">
-      
-      <div class="col-span-5 p-4 space-y-4 overflow-y-auto bg-slate-100/50 dark:bg-slate-900/40">
-        
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-xs space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-            <div class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
-              </svg>
-              <h2 class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">1. Nguồn Dữ Liệu</h2>
-            </div>
-            <button @click="openNewDatabase" class="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
-              + Kết nối DB
-            </button>
-          </div>
-
-          <div class="space-y-2">
-            <div v-if="databases.length === 0" class="text-slate-400 text-center py-3">
-              Chưa có Database nào kết nối. Bấm "+ Kết nối DB" để thêm.
-            </div>
-
-            <div v-for="db in databases" :key="db.id" 
-                 class="p-2.5 rounded-lg border flex items-center justify-between transition"
-                 :class="config.baseTable.dbId === db.id ? 'border-blue-500/60 bg-blue-500/5 dark:bg-blue-500/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'">
-              
-              <div class="flex items-center gap-2.5">
-                <span class="w-2 h-2 rounded-full" :class="db.connected ? 'bg-emerald-500' : 'bg-amber-500'" :title="db.connected ? 'Đã kết nối' : 'Cần kết nối lại'"></span>
-                <div>
-                  <div class="font-semibold text-xs text-slate-900 dark:text-slate-100">{{ db.name }}</div>
-                  <div class="text-[11px] font-mono text-slate-400">{{ db.host }}:{{ db.port }}/{{ db.databaseName }}{{ db.schema ? ' · ' + db.schema : '' }} ({{ db.dbType }})</div>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-1.5">
-                <button @click="editDatabase(db)" class="text-blue-500 text-xs" title="Nhập lại thông tin và mật khẩu">Kết nối lại</button>
-                <span v-if="config.baseTable.dbId === db.id" class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                  GỐC
-                </span>
-                <button @click="deleteDatabase(db.id)" class="text-slate-400 hover:text-red-500 p-1" title="Xóa kết nối">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-xs space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-            <div class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
-              </svg>
-              <h2 class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">2. File Excel Mẫu</h2>
-            </div>
-            <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
-              Header dòng:
-              <input type="number" v-model.number="config.headerRow" @change="onHeaderRowChange" min="0" class="w-12 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-center font-mono text-xs">
-            </div>
-          </div>
-
-          <div class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-3 text-center bg-slate-50/50 dark:bg-slate-800/30 hover:border-blue-500 transition cursor-pointer relative">
-            <input type="file" @change="handleFileUpload" accept=".xlsx" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
-            <div class="space-y-1">
-              <svg class="w-6 h-6 mx-auto text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z"/>
-              </svg>
-              <div v-if="templateFileName" class="font-bold text-xs text-blue-600 dark:text-blue-400 truncate">
-                {{ templateFileName }}
-              </div>
-              <div v-else class="text-[11px] text-slate-500">
-                Kéo thả hoặc <span class="font-semibold text-blue-500">chọn file .xlsx</span> mẫu
-              </div>
-              <div v-if="excelColumns.length > 0" class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
-                Đã nhận diện {{ excelColumns.length }} cột đích (A → {{ excelColumns[excelColumns.length - 1].letter }})
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-xs space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-            <div class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"/>
-              </svg>
-              <h2 class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">3. Cấu Hình Bảng & Ghép Nối (Join)</h2>
-            </div>
-          </div>
-
-          <div class="space-y-2">
-            <label class="block font-semibold text-[11px] text-slate-700 dark:text-slate-300">Bảng Gốc (Driving Table):</label>
-            <div class="grid grid-cols-2 gap-2">
-              <select v-model="config.baseTable.dbId" @change="onBaseDbChange" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs">
-                <option value="">-- Chọn Database Gốc --</option>
-                <option v-for="d in databases" :key="d.id" :value="d.id">{{ d.name }}</option>
-              </select>
-              <select v-model="config.baseTable.tableName" @change="onBaseTableChange" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs">
-                <option value="">-- Chọn Bảng Gốc --</option>
-                <option v-for="t in baseTables" :key="t" :value="t">{{ t }}</option>
-              </select>
-            </div>
-
-            <label class="block text-xs">Tên nguồn gốc (alias, tùy chọn)
-              <input v-model="config.baseTable.alias" placeholder="Mặc định dùng tên bảng" class="w-full bg-white dark:bg-slate-800 border rounded p-1.5 font-mono text-xs">
-            </label>
-            <p class="text-xs text-slate-500">Mỗi dòng khớp ở bảng phụ tạo một dòng báo cáo. Không khớp vẫn giữ dòng gốc; nhiều bảng phụ có thể làm tăng số dòng.</p>
-            <div v-if="baseColumns.length > 0" class="pt-1">
-              <div class="text-[11px] font-medium text-slate-400 mb-1">Tích chọn các trường cần lấy từ Bảng gốc:</div>
-              <div class="grid grid-cols-3 gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/60 font-mono text-[11px]">
-                <label v-for="c in baseColumns" :key="c.name" class="flex items-center gap-1.5 cursor-pointer hover:text-blue-500">
-                  <input type="checkbox" :value="c.name" v-model="config.baseTable.columns" class="rounded border-slate-300 text-blue-600 focus:ring-0">
-                  <span class="truncate">{{ c.name }}</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <div class="flex items-center justify-between">
-              <label class="font-semibold text-[11px] text-slate-700 dark:text-slate-300">Bảng Phụ Ghép Nối (Join):</label>
-              <button @click="addJoinTable" class="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline">
-                + Thêm bảng join
-              </button>
-            </div>
-
-            <div v-for="(join, jIdx) in config.joins" :key="jIdx" class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-[10px] font-mono text-amber-500">JOIN #{{ jIdx + 1 }}</span>
-                <button @click="removeJoinTable(jIdx)" class="text-slate-400 hover:text-red-500 text-xs">Xóa</button>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <select v-model="join.dbId" @change="onJoinDbChange(join)" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
-                  <option value="">-- Chọn DB Phụ --</option>
-                  <option v-for="d in databases" :key="d.id" :value="d.id">{{ d.name }}</option>
-                </select>
-                <select v-model="join.tableName" @change="onJoinTableChange(join)" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
-                  <option value="">-- Chọn Bảng Phụ --</option>
-                  <option v-for="t in join.availableTables || []" :key="t" :value="t">{{ t }}</option>
-                </select>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <label class="col-span-2">Tên nguồn (alias)
-                  <input v-model="join.alias" placeholder="VD: crm_users" class="w-full bg-white dark:bg-slate-800 border rounded p-1.5 font-mono text-xs">
-                </label>
-                <input v-model="join.sourceKey" placeholder="Khóa gốc (VD: user_id)" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1.5 font-mono text-xs">
-                <input v-model="join.targetKey" placeholder="Khóa phụ (VD: id)" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1.5 font-mono text-xs">
-              </div>
-
-              <div v-if="(join.availableColumns || []).length > 0" class="pt-1">
-                <div class="text-[10px] text-slate-400 mb-1">Tích chọn cột từ bảng phụ:</div>
-                <div class="grid grid-cols-3 gap-1 max-h-24 overflow-y-auto p-1.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 font-mono text-[10px]">
-                  <label v-for="c in join.availableColumns" :key="c.name" class="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" :value="c.name" v-model="join.columns" class="rounded border-slate-300 text-amber-500 focus:ring-0">
-                    <span class="truncate">{{ c.name }}</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
-      <div class="col-span-7 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
-        
-        <div class="border-b border-slate-200 dark:border-slate-800 px-5 py-2.5 flex items-center justify-between bg-white dark:bg-slate-900">
-          
-          <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-            <button @click="activeTab = 'map'" 
-                    class="px-3 py-1 rounded-md text-xs font-semibold transition"
-                    :class="activeTab === 'map' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
-              Ánh Xạ Cột ({{ Object.keys(config.mapping).length }}/{{ excelColumns.length }})
-            </button>
-            <button @click="fetchPreview" 
-                    class="px-3 py-1 rounded-md text-xs font-medium transition"
-                    :class="activeTab === 'preview' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
-              Xem Trước Dữ Liệu
-            </button>
-          </div>
-
-          <button @click="smartAutoMatch" class="px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-xs font-semibold flex items-center gap-1.5 transition">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"/>
-            </svg>
-            Tự Động Khớp Cột
-          </button>
-        </div>
-
-        <div v-show="activeTab === 'map'" class="flex-1 p-5 overflow-y-auto space-y-2.5">
-          <div v-if="excelColumns.length === 0" class="text-center text-slate-400 py-16">
-            <svg class="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
-            </svg>
-            Vui lòng chọn file Excel mẫu ở khung số 2 để đọc danh sách cột.
-          </div>
-
-          <div v-else class="space-y-2">
-            <div class="grid grid-cols-12 gap-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 pb-1.5 border-b border-slate-100 dark:border-slate-800 px-2">
-              <div class="col-span-5">Cột Trong File Excel Mẫu</div>
-              <div class="col-span-1 text-center">Nối</div>
-              <div class="col-span-6">Trường Dữ Liệu Database</div>
-            </div>
-
-            <div v-for="col in excelColumns" :key="col.letter" 
-                 class="grid grid-cols-12 gap-3 items-center p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-              
-              <div class="col-span-5 flex items-center gap-2">
-                <span class="w-5 h-5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono font-bold flex items-center justify-center text-[10px]">
-                  {{ col.letter }}
-                </span>
-                <span class="font-medium text-xs text-slate-800 dark:text-slate-200 truncate">{{ col.title }}</span>
-              </div>
-
-              <div class="col-span-1 text-center text-slate-400">
-                <svg class="w-3.5 h-3.5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/>
-                </svg>
-              </div>
-
-              <div class="col-span-6">
-                <select v-model="config.mapping[col.letter]" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-xs font-mono text-slate-800 dark:text-slate-200">
-                  <option value="">-- Bỏ trống --</option>
-                  <option v-for="f in allSelectedFields" :key="f" :value="f">{{ f }}</option>
-                </select>
-              </div>
-
-            </div>
-          </div>
-        </div>
-
-        <div v-show="activeTab === 'preview'" class="flex-1 p-5 overflow-y-auto space-y-3">
-          <div v-if="previewLoading" class="text-center py-16 text-slate-400">
-            <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent mb-2"></div>
-            <div>Đang tải 20 dòng dữ liệu ghép nối từ Database...</div>
-          </div>
-
-          <div v-else-if="previewRows.length === 0" class="text-center py-16 text-slate-400">
-            Chưa có dữ liệu xem trước hoặc không tìm thấy bản ghi nào.
-          </div>
-
-          <div v-else class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold">
-                <tr>
-                  <th v-for="col in excelColumns" :key="col.letter" class="p-2.5 border-r border-slate-200 dark:border-slate-800 whitespace-nowrap">
-                    {{ col.letter }}: {{ col.title }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-[11px]">
-                <tr v-for="(row, rIdx) in previewRows" :key="rIdx" class="hover:bg-blue-500/5 transition">
-                  <td v-for="col in excelColumns" :key="col.letter" class="p-2 border-r border-slate-100 dark:border-slate-800 whitespace-nowrap">
-                    {{ formatCellValue(row[config.mapping[col.letter]]) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <footer class="border-t border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Lọc theo ngày:</span>
-            <select v-model="config.baseTable.filterColumn" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">
-              <option value="">-- Không lọc ngày --</option>
-              <option v-for="c in baseColumns" :key="c.name" :value="c.name">{{ c.name }}</option>
-            </select>
-            <input type="date" v-model="config.baseTable.fromDate" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">
-            <span class="text-slate-400">→</span>
-            <input type="date" v-model="config.baseTable.toDate" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">
-          </div>
-
-          <div class="flex items-center gap-2.5">
-            <button @click="fetchPreview" class="px-3.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 transition">
-              Xem trước 20 dòng
-            </button>
-
-            <button @click="exportReport" :disabled="exportLoading" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition">
-              <svg v-if="!exportLoading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-              </svg>
-              <div v-else class="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent"></div>
-              <span>{{ exportLoading ? 'Đang xuất...' : 'Xuất File Excel (.xlsx)' }}</span>
-            </button>
-          </div>
-
-        </footer>
-
-      </div>
-
-    </div>
-
-    <div v-if="showConnectModal" class="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-5 space-y-4 shadow-xl">
-        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-          <h3 class="font-bold text-sm text-slate-900 dark:text-white">Thêm Kết Nối Database Mới</h3>
-          <button @click="showConnectModal = false" class="text-slate-400 hover:text-slate-600">×</button>
-        </div>
-
-        <div class="space-y-3">
-          <div>
-            <label class="block text-[11px] font-medium text-slate-500 mb-1">Tên gợi nhớ:</label>
-            <input v-model="newDb.name" placeholder="VD: Order Service DB" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-          </div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">Loại DB:</label>
-              <select v-model="newDb.dbType" @change="onDbTypeChange" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-                <option v-for="type in databaseTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">Cổng (Port):</label>
-              <input type="number" v-model.number="newDb.port" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">Host / IP:</label>
-              <input v-model="newDb.host" placeholder="localhost hoặc IP OpenVPN" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-            </div>
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">{{ selectedDatabaseType.databaseLabel }}:</label>
-              <input v-model="newDb.database" placeholder="VD: order_db" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">Username:</label>
-              <input v-model="newDb.username" placeholder="postgres / root" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-            </div>
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 mb-1">Mật khẩu:</label>
-              <input type="password" v-model="newDb.password" placeholder="••••••••" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-            </div>
-          </div>
-          <div v-if="selectedDatabaseType.supportsSchema">
-            <label class="block text-[11px] font-medium text-slate-500 mb-1">Schema (tùy chọn, dùng đúng chữ hoa/thường):</label>
-            <input v-model="newDb.schema" placeholder="Bỏ trống để dùng schema mặc định của tài khoản" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-xs">
-          </div>
-        </div>
-
-        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <button @click="showConnectModal = false" class="px-3 py-1.5 rounded text-xs text-slate-500 hover:text-slate-700">Hủy</button>
-          <button @click="saveNewDatabase" :disabled="connectLoading || !databaseTypes.length" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5">
-            <div v-if="connectLoading" class="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
-            <span>{{ connectLoading ? 'Đang kiểm tra...' : 'Kiểm tra & Kết nối' }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
+      <footer class="step-footer"><button v-if="step>1" @click="step--">Quay lại</button><span v-else class="muted">Thiết lập một lần, dùng lại qua mẫu báo cáo.</span><button v-if="step<4" class="primary" @click="step++">Tiếp: {{ steps[step] }}</button><button v-else @click="saveCurrentProfile">Lưu mẫu báo cáo</button></footer>
+    </main>
   </div>
 
-  <script src="/app.js"></script>
-</body>
-</html>
+  <main v-else class="sources-page"><div class="page-heading"><div><p class="eyebrow">Thiết lập kỹ thuật</p><h1>Nguồn dữ liệu</h1><p class="lead">Quản lý kết nối dùng trong các mẫu báo cáo.</p></div><button class="primary" @click="openNewDatabase">Thêm kết nối</button></div><div class="notice">Mật khẩu database chỉ dùng cho phiên hiện tại. Sau khi khởi động lại, chọn “Kết nối lại” nếu nguồn chưa hoạt động.</div><div v-if="!databases.length" class="empty-preview"><h2>Chưa có kết nối</h2><p>Thêm database bằng tài khoản chỉ có quyền đọc dữ liệu báo cáo.</p><button @click="openNewDatabase">Thêm kết nối đầu tiên</button></div><div v-else class="table-wrap"><table><thead><tr><th>Tên nguồn</th><th>Database</th><th>Địa chỉ</th><th>Schema</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody><tr v-for="db in databases" :key="db.id"><td><strong>{{ db.name }}</strong></td><td>{{ db.dbType }}<small>{{ db.databaseName }}</small></td><td>{{ db.host }}:{{ db.port }}</td><td>{{ db.schema || 'Mặc định' }}</td><td><span class="status" :class="db.connected?'ready':'waiting'">{{ db.connected?'Đã kết nối':'Cần kết nối lại' }}</span></td><td><div class="button-group"><button @click="editDatabase(db)">Kết nối lại</button><button class="danger-text" @click="deleteDatabase(db.id)">Xóa</button></div></td></tr></tbody></table></div><button class="spaced" @click="view='report'">Về báo cáo</button></main>
+
+  <div class="toast-stack" aria-live="polite"><div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.tone"><span>{{ toast.message }}</span><button @click="toasts=toasts.filter(item=>item.id!==toast.id)" aria-label="Đóng thông báo">×</button></div></div>
+
+  <div v-if="showConnectModal && !dialog" class="overlay"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="connection-title"><div class="section-heading"><h2 id="connection-title">{{ newDb.id?'Kết nối lại database':'Thêm kết nối' }}</h2><button @click="closeConnection" :disabled="connectLoading" aria-label="Đóng">×</button></div><p class="muted">Dùng tài khoản có quyền SELECT trên các bảng báo cáo.</p><form @submit.prevent="saveNewDatabase" novalidate><label>Tên gợi nhớ<input aria-label="Tên gợi nhớ" @input="delete fieldErrors.name;delete fieldErrors.connection" v-model="newDb.name" autofocus :aria-invalid="!!fieldErrors.name" placeholder="Ví dụ: Dữ liệu đơn hàng"><span class="field-error" v-if="fieldErrors.name">{{ fieldErrors.name }}</span></label><div class="form-grid two"><label>Loại database<select aria-label="Loại database" v-model="newDb.dbType" @change="onDbTypeChange"><option v-for="type in databaseTypes" :key="type.id" :value="type.id">{{ type.name }}</option></select></label><label>Cổng<input type="number" aria-label="Cổng" @input="delete fieldErrors.port;delete fieldErrors.connection" v-model.number="newDb.port" :aria-invalid="!!fieldErrors.port"><span class="field-error" v-if="fieldErrors.port">{{ fieldErrors.port }}</span></label></div><label>Host / IP<input @input="delete fieldErrors.host;delete fieldErrors.connection" v-model="newDb.host" :aria-invalid="!!fieldErrors.host"><span class="field-error" v-if="fieldErrors.host">{{ fieldErrors.host }}</span></label><label>{{ selectedDatabaseType.databaseLabel }}<input :aria-label="selectedDatabaseType.databaseLabel" @input="delete fieldErrors.database;delete fieldErrors.connection" v-model="newDb.database" :aria-invalid="!!fieldErrors.database"><span class="field-error" v-if="fieldErrors.database">{{ fieldErrors.database }}</span></label><label v-if="selectedDatabaseType.supportsSchema">Schema (tùy chọn)<input v-model="newDb.schema" placeholder="Để trống dùng schema mặc định của tài khoản"></label><div class="form-grid two"><label>Tài khoản<input aria-label="Tài khoản" @input="delete fieldErrors.username;delete fieldErrors.connection" v-model="newDb.username" autocomplete="username" :aria-invalid="!!fieldErrors.username"><span class="field-error" v-if="fieldErrors.username">{{ fieldErrors.username }}</span></label><label>Mật khẩu<input type="password" v-model="newDb.password" autocomplete="off"></label></div><p v-if="fieldErrors.connection" class="notice error" role="alert">{{ fieldErrors.connection }}</p><div class="modal-actions"><button type="button" @click="closeConnection" :disabled="connectLoading">Hủy</button><button type="submit" class="primary" :disabled="connectLoading || !databaseTypes.length">{{ connectLoading?'Đang kiểm tra kết nối…':'Kiểm tra & lưu kết nối' }}</button></div></form></section></div>
+  <div v-if="dialog" class="overlay"><section class="modal small" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message"><h2 id="dialog-title">{{ dialog.title }}</h2><p id="dialog-message" class="dialog-message">{{ dialog.message }}</p><form v-if="dialog.kind==='input'" @submit.prevent="closeDialog(true)"><label>Tên mẫu<input v-model="dialog.value" autofocus maxlength="100" :aria-invalid="!!dialog.error"></label><p v-if="dialog.error" class="field-error">{{ dialog.error }}</p><div class="modal-actions"><button type="button" @click="closeDialog(false)">Hủy</button><button type="submit" class="primary">{{ dialog.confirm }}</button></div></form><div v-else class="modal-actions"><button autofocus @click="closeDialog(false)">{{ dialog.kind==='error'?'Đóng':'Quay lại' }}</button><button v-if="dialog.kind==='error' && dialog.retry" class="primary" @click="retryDialog">Thử lại</button><button v-if="dialog.kind==='confirm'" :class="dialog.destructive?'danger':'primary'" @click="closeDialog(true)">{{ dialog.confirm }}</button></div></section></div>
+</div>
+<noscript>Hãy bật JavaScript để sử dụng công cụ báo cáo.</noscript>
+</body></html>

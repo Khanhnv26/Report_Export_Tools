@@ -1,13 +1,14 @@
 # Report Export Tool
 
+Hướng dẫn giao diện hiện tại: [Report Workspace](docs/REPORT_WORKSPACE.md). Giao diện có bốn bước, xuất bảng mới hoặc template, preview theo định dạng và xuất nền có thể hủy.
+
 > **Microservice Data Aggregation & Excel Stream Engine**  
-> Công cụ tổng hợp dữ liệu phân tán liên cơ sở dữ liệu (Cross-Database Hash-Join) và stream nạp dữ liệu vào file Excel mẫu `.xlsx` giữ nguyên 100% định dạng ban đầu.
+> Công cụ tổng hợp dữ liệu phân tán liên cơ sở dữ liệu (Cross-Database Hash-Join) và stream nạp dữ liệu vào file Excel mẫu `.xlsx` giữ cấu trúc và định dạng template trong phạm vi được mô tả ở hướng dẫn.
 
 [![Java 21](https://img.shields.io/badge/Java-21%20LTS-007396?logo=openjdk&logoColor=white)](https://www.oracle.com/java/)
 [![Spring Boot 3.3.4](https://img.shields.io/badge/Spring%20Boot-3.3.4-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Apache POI 5.2.5](https://img.shields.io/badge/Apache%20POI-5.2.5-D22128?logo=apache&logoColor=white)](https://poi.apache.org/)
 [![Vue 3](https://img.shields.io/badge/Vue.js-3.x%20CDN-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-v3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -33,7 +34,7 @@ Khi cần xuất các báo cáo đối soát tổng hợp (ví dụ: *Đơn hàn
 | **Database Adapters** | **PostgreSQL**, **MySQL**, **SQL Server (MSSQL)**, **Oracle** | Tích hợp sẵn 4 driver chính thức (`postgresql`, `mysql-connector-j`, `mssql-jdbc`, `ojdbc11`). Adapter hóa việc quote identifier và phân trang theo từng dialect. |
 | **Processing Engine** | **In-Memory Hash-Join Engine** | Batching 1000 khóa (`IN (:keys)`), ghép dữ liệu độ phức tạp $O(1)$ trên RAM, triệt tiêu độ trễ mạng qua OpenVPN/LAN. |
 | **Excel Generator** | **Apache POI 5.2.5** (OOXML) | Nạp template `.xlsx` có sẵn, clone `CellStyle`, giữ nguyên định dạng, tự động xử lý số dài (>15 chữ số) tránh lỗi làm tròn. |
-| **Frontend Studio** | **Vue 3 CDN** + **Tailwind CSS** | Bố cục 2 cột Studio chuyên nghiệp, hỗ trợ **Light / Dark Mode**, 100% SVG Lucide-style (Anti-AI Slop), **Zero NPM build / Zero Node.js**. |
+| **Frontend Workspace** | **Vue 3 cục bộ** + **CSS** | Bốn bước tạo báo cáo, thiết lập nguồn riêng, popup ứng dụng, desktop/mobile; không cần npm để chạy. |
 | **Security & Filter** | **Regex Whitelist** + **AccessControlFilter** | Chống SQL Injection bằng Regex `^[a-zA-Z0-9_]+$` trên identifier; HTTP Basic Auth khi bind ra mạng ngoài; không lưu mật khẩu vào disk. |
 
 ### Sơ đồ luồng xử lý (Data Flow)
@@ -89,23 +90,14 @@ java -jar target/microservice-report-tool-1.0.0.jar
 
 ---
 
-## 4. Hướng dẫn sử dụng 5 bước (Studio Workflow)
+## 4. Giao diện Report Workspace
 
-```
-[1. Kết nối DB] ➔ [2. Tải File Mẫu] ➔ [3. Chọn Bảng & Join] ➔ [4. Khớp Cột] ➔ [5. Xuất Excel]
-```
+1. **Nguồn dữ liệu:** chọn bảng gốc, cột và khóa ghép. Quản lý kết nối trong khu Thiết lập nguồn.
+2. **Cột đầu ra:** chọn xuất bảng mới hoặc template; thiết lập tiêu đề, thứ tự, kiểu và định dạng.
+3. **Lọc & sắp xếp:** lọc ngày tại database, thêm điều kiện sau ghép và chọn thứ tự kết quả.
+4. **Xem trước & xuất:** kiểm tra preview, cập nhật khi cấu hình thay đổi; tạo tác vụ nền, xem trạng thái, hủy hoặc tải file.
 
-1. **Thêm nguồn dữ liệu (Khung số 1):** Bấm `+ Kết nối DB`, chọn loại CSDL (MySQL, PostgreSQL, SQL Server, Oracle), nhập host/port/database/user/password và bấm *Kiểm tra & Kết nối*.
-2. **Nạp file Excel mẫu (Khung số 2):** Kéo thả file template `.xlsx` vào ô tải lên. Hệ thống tự nhận diện số lượng cột và dòng tiêu đề.
-3. **Cấu hình Bảng & Khóa ghép (Khung số 3):**
-   - Chọn **Bảng gốc** (Driving Table) và tích các cột cần lấy.
-   - Bấm `+ Thêm bảng join`, chọn CSDL và bảng phụ, chỉ định khóa nối (VD: khóa gốc `user_id` = khóa phụ `id`).
-4. **Ánh xạ cột & Tự động khớp (Cột phải):**
-   - Bấm nút **"Tự Động Khớp Cột"**: Thuật toán xử lý ngôn ngữ tự nhiên tiếng Việt sẽ tự động nối cột Excel với trường CSDL tương thích (ví dụ: *Mã Đơn Hàng* $\rightarrow$ `orders.order_code`, *Họ và tên* $\rightarrow$ `users.full_name`).
-5. **Xem trước & Xuất báo cáo:**
-   - Bấm **"Xem trước 20 dòng"** để kiểm tra dữ liệu ghép nối trực tiếp trên giao diện.
-   - Bấm **"Xuất File Excel (.xlsx)"** để tải file hoàn chỉnh.
-   - Bấm **"Lưu mẫu"** trên thanh Header để lưu cấu hình cho các lần xuất báo cáo tiếp theo.
+Xem [hướng dẫn chi tiết và giới hạn](docs/REPORT_WORKSPACE.md).
 
 ---
 

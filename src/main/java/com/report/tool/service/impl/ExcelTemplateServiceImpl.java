@@ -43,6 +43,12 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
     }
 
     @Override
+    public Workbook openTemplate(String templateId) {
+        try (InputStream input = Files.newInputStream(templatePath(templateId))) { return WorkbookFactory.create(input); }
+        catch (IOException ex) { throw new TemplateProcessingException("Không đọc được template.", ex); }
+    }
+
+    @Override
     public String saveTemplate(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new TemplateProcessingException("File tải lên rỗng hoặc không tồn tại!");

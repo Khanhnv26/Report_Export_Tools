@@ -37,3 +37,5 @@ Thumbs.db
 templates/
 dist/
 connections.json
+exports/
+node_modules/
