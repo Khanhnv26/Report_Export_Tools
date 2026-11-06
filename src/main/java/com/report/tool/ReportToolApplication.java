@@ -8,9 +8,12 @@ import org.springframework.context.event.EventListener;
 
 import java.awt.Desktop;
 import java.net.URI;
+import org.springframework.beans.factory.annotation.Value;
 
 @SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
 public class ReportToolApplication {
+    @Value("${report.open-browser:true}")
+    private boolean openBrowser;
 
     public static void main(String[] args) {
         System.setProperty("java.awt.headless", "false");
@@ -19,6 +22,7 @@ public class ReportToolApplication {
 
     @EventListener(ApplicationReadyEvent.class)
     public void openBrowser() {
+        if (!openBrowser) return;
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URI("http://localhost:8080"));

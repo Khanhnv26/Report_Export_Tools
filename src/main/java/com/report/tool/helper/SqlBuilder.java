@@ -13,6 +13,13 @@ import java.util.stream.Collectors;
 public class SqlBuilder {
     private static final Pattern SAFE_IDENTIFIER = Pattern.compile("^[a-zA-Z0-9_]+$");
 
+    public String limitQuery(String sql, String dbType) {
+        if ("SQLSERVER".equalsIgnoreCase(dbType) || "MSSQL".equalsIgnoreCase(dbType)) {
+            return "SELECT TOP (:rowLimit) " + sql.substring("SELECT ".length());
+        }
+        return sql + " LIMIT :rowLimit";
+    }
+
     public String validateIdentifier(String identifier) {
         if (identifier == null || !SAFE_IDENTIFIER.matcher(identifier).matches()) {
             throw new InvalidIdentifierException(identifier);
@@ -28,7 +35,9 @@ public class SqlBuilder {
                 .collect(Collectors.joining(", "));
         StringBuilder sql = new StringBuilder("SELECT ").append(colList).append(" FROM ").append(safeTable);
         if (hasDateFilter && filterCol != null && !filterCol.isBlank()) {
-            sql.append(" WHERE ").append(validateIdentifier(filterCol)).append(" BETWEEN :fromDate AND :toDate");
+            String safeFilter = validateIdentifier(filterCol);
+            sql.append(" WHERE ").append(safeFilter).append(" >= :fromDate AND ")
+                    .append(safeFilter).append(" < :toDateExclusive");
         }
         return sql.toString();
     }

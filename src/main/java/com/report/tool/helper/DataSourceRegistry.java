@@ -12,6 +12,11 @@ import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 
 import javax.sql.DataSource;
 import java.io.File;
@@ -25,12 +30,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class DataSourceRegistry {
 
-    private final File storageFile = new File("connections.json");
+    private final File storageFile;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Map<String, DBConnectionRequest> savedConfigs = new ConcurrentHashMap<>();
     private final Map<String, HikariDataSource> dataSources = new ConcurrentHashMap<>();
     private final Map<String, NamedParameterJdbcTemplate> jdbcTemplates = new ConcurrentHashMap<>();
+
+    public DataSourceRegistry(@Value("${report.connections-file:connections.json}") String connectionsFile) {
+        storageFile = new File(connectionsFile);
+    }
 
     @PostConstruct
     public void loadSavedConnections() {
@@ -39,27 +48,40 @@ public class DataSourceRegistry {
         try {
             Map<String, DBConnectionRequest> loaded = objectMapper.readValue(
                     storageFile, new TypeReference<Map<String, DBConnectionRequest>>() {});
+            loaded.forEach((id, request) -> savedConfigs.put(id, withoutPassword(request)));
+            // Migrate legacy files before reconnecting: passwords never remain on disk.
+            saveToDisk();
             loaded.values().forEach(request -> {
                 try {
+                    String password = System.getenv(passwordVariable(request.getId()));
+                    if (password != null) request.setPassword(password);
                     connectInternal(request, false);
                 } catch (Exception e) {
-                    log.warn("Không thể tự kết nối lại DB {}: {}", request.getName(), e.getMessage());
+                    log.warn("Không thể tự kết nối lại DB {}. Hãy kết nối lại hoặc cấu hình biến môi trường {}.",
+                            request.getId(), passwordVariable(request.getId()));
                 }
             });
         } catch (Exception e) {
-            log.warn("Lỗi đọc file connections.json: {}", e.getMessage());
+            throw new IllegalStateException("Không thể đọc hoặc làm sạch file cấu hình kết nối.", e);
         }
     }
 
-    public DBConnectionRequest connectAndRegister(DBConnectionRequest request) {
+    public synchronized DBConnectionRequest connectAndRegister(DBConnectionRequest request) {
+        if (request == null) throw new DatabaseConnectionException("Cấu hình kết nối không hợp lệ!");
         if (request.getId() == null || request.getId().isBlank()) {
-            request.setId("db_" + UUID.randomUUID().toString().substring(0, 6));
+            request.setId("db_" + UUID.randomUUID().toString().replace("-", ""));
         }
         connectInternal(request, true);
         return request;
     }
 
     public void connectInternal(DBConnectionRequest request, boolean persist) {
+        if (request.getId() == null || !request.getId().matches("[a-zA-Z0-9_-]+")
+                || request.getHost() == null || !request.getHost().matches("[a-zA-Z0-9.\\-:\\[\\]]+")
+                || request.getDatabase() == null || !request.getDatabase().matches("[a-zA-Z0-9_-]+")
+                || request.getPort() < 0 || request.getPort() > 65535) {
+            throw new DatabaseConnectionException("ID, host, cổng hoặc tên database không hợp lệ!");
+        }
         String jdbcUrl = buildJdbcUrl(request);
         String driver = getDriverClassName(request.getDbType());
 
@@ -74,7 +96,7 @@ public class DataSourceRegistry {
         config.setConnectionTimeout(8000);
         config.setReadOnly(true);
 
-        HikariDataSource dataSource;
+        HikariDataSource dataSource = null;
         try {
             dataSource = new HikariDataSource(config);
             try (Connection conn = dataSource.getConnection()) {
@@ -84,7 +106,8 @@ public class DataSourceRegistry {
                 }
             }
         } catch (Exception e) {
-            throw new DatabaseConnectionException("Không thể kết nối đến Database [" + request.getName() + "]: " + e.getMessage(), e);
+            if (dataSource != null) dataSource.close();
+            throw new DatabaseConnectionException("Không thể kết nối database. Kiểm tra thông số và quyền truy cập.", e);
         }
 
         HikariDataSource old = dataSources.put(request.getId(), dataSource);
@@ -95,23 +118,46 @@ public class DataSourceRegistry {
         NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
         jdbc.getJdbcTemplate().setQueryTimeout(60);
         jdbcTemplates.put(request.getId(), jdbc);
-        savedConfigs.put(request.getId(), request);
+        savedConfigs.put(request.getId(), withoutPassword(request));
 
         if (persist) {
             saveToDisk();
         }
-        log.info("Đã kết nối thành công Database: {} ({})", request.getName(), jdbcUrl);
+        log.info("Đã kết nối thành công Database: {}", request.getId());
     }
 
-    private void saveToDisk() {
+    private synchronized void saveToDisk() {
+        Path temporary = null;
         try {
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(storageFile, savedConfigs);
+            Path target = storageFile.toPath().toAbsolutePath();
+            Files.createDirectories(target.getParent());
+            temporary = Files.createTempFile(target.getParent(), "connections-", ".tmp");
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), savedConfigs);
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (Exception e) {
-            log.warn("Lỗi lưu file connections.json: {}", e.getMessage());
+            throw new DatabaseConnectionException("Không thể lưu cấu hình kết nối.", e);
+        } finally {
+            if (temporary != null) {
+                try { Files.deleteIfExists(temporary); } catch (Exception ignored) { }
+            }
         }
     }
 
-    public void removeDatabase(String dbId) {
+    static String passwordVariable(String id) {
+        return "REPORT_DB_PASSWORD_" + id.toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+    }
+
+    private DBConnectionRequest withoutPassword(DBConnectionRequest request) {
+        return DBConnectionRequest.builder().id(request.getId()).name(request.getName()).dbType(request.getDbType())
+                .host(request.getHost()).port(request.getPort()).database(request.getDatabase())
+                .username(request.getUsername()).build();
+    }
+
+    public synchronized void removeDatabase(String dbId) {
         if (!savedConfigs.containsKey(dbId)) {
             throw new DatabaseNotFoundException(dbId);
         }
@@ -171,6 +217,16 @@ public class DataSourceRegistry {
             throw new DatabaseNotFoundException(dbId);
         }
         return jdbc;
+    }
+
+    public String getDatabaseType(String dbId) {
+        DBConnectionRequest config = savedConfigs.get(dbId);
+        if (config == null) throw new DatabaseNotFoundException(dbId);
+        return config.getDbType();
+    }
+
+    public boolean isConnected(String dbId) {
+        return jdbcTemplates.containsKey(dbId);
     }
 
     public Collection<DBConnectionRequest> getAllDatabases() {

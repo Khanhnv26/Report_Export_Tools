@@ -18,5 +18,6 @@ public class DBConnectionRequest {
     private int port;
     private String database;
     private String username;
+    @lombok.ToString.Exclude
     private String password;
 }

@@ -4,6 +4,9 @@ import com.report.tool.dto.response.ExcelColumnResponse;
 import com.report.tool.exception.TemplateNotFoundException;
 import com.report.tool.exception.TemplateProcessingException;
 import com.report.tool.service.ExcelTemplateService;
+import com.report.tool.helper.ReportValues;
+import org.springframework.beans.factory.annotation.Value;
+import org.apache.poi.ss.SpreadsheetVersion;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellReference;
@@ -25,9 +28,10 @@ import java.util.*;
 @Slf4j
 public class ExcelTemplateServiceImpl implements ExcelTemplateService {
 
-    private final Path uploadDir = Path.of("templates");
+    private final Path uploadDir;
 
-    public ExcelTemplateServiceImpl() {
+    public ExcelTemplateServiceImpl(@Value("${report.template-directory:templates}") String templateDirectory) {
+        uploadDir = Path.of(templateDirectory).toAbsolutePath().normalize();
         try {
             if (!Files.exists(uploadDir)) {
                 Files.createDirectories(uploadDir);
@@ -49,7 +53,7 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
             throw new TemplateProcessingException("Chỉ chấp nhận file định dạng Excel (.xlsx)!");
         }
 
-        String safeName = UUID.randomUUID() + "_" + originalName;
+        String safeName = UUID.randomUUID() + ".xlsx";
         Path target = uploadDir.resolve(safeName);
 
         try (InputStream in = file.getInputStream()) {
@@ -63,10 +67,8 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
 
     @Override
     public List<ExcelColumnResponse> readHeaders(String templateId, int headerRowIndex) {
-        Path path = uploadDir.resolve(templateId);
-        if (!Files.exists(path)) {
-            throw new TemplateNotFoundException(templateId);
-        }
+        Path path = templatePath(templateId);
+        validateHeaderRow(headerRowIndex);
 
         List<ExcelColumnResponse> cols = new ArrayList<>();
         try (InputStream in = Files.newInputStream(path);
@@ -105,9 +107,24 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
 
     @Override
     public void fillTemplate(String templateId, int headerRowIndex, List<Map<String, Object>> rows, Map<String, String> mapping, OutputStream out) {
-        Path path = uploadDir.resolve(templateId);
-        if (!Files.exists(path)) {
-            throw new TemplateNotFoundException(templateId);
+        Path path = templatePath(templateId);
+        validateHeaderRow(headerRowIndex);
+        if (rows == null || (long) headerRowIndex + 1 + rows.size() > SpreadsheetVersion.EXCEL2007.getMaxRows()) {
+            throw new TemplateProcessingException("Dữ liệu vượt số dòng của sheet Excel!");
+        }
+        if (mapping == null || mapping.values().stream().noneMatch(value -> value != null && !value.isBlank())) {
+            throw new TemplateProcessingException("Cần ánh xạ ít nhất một cột Excel!");
+        }
+        for (Map.Entry<String, String> entry : mapping.entrySet()) {
+            String letter = entry.getKey();
+            if (letter == null || !letter.matches("[A-Z]{1,3}")
+                    || CellReference.convertColStringToIndex(letter) >= SpreadsheetVersion.EXCEL2007.getMaxColumns()) {
+                throw new TemplateProcessingException("Cột Excel không hợp lệ!");
+            }
+            if (entry.getValue() != null && !entry.getValue().isBlank()
+                    && rows.stream().anyMatch(row -> !row.containsKey(entry.getValue()))) {
+                throw new TemplateProcessingException("Ánh xạ tham chiếu cột không tồn tại: " + entry.getValue());
+            }
         }
 
         try (InputStream in = Files.newInputStream(path);
@@ -150,6 +167,7 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
     }
 
     private void setCellValueByType(Cell cell, Object val, CellStyle dateStyle) {
+        val = ReportValues.preservePrecision(val);
         if (val == null) {
             cell.setBlank();
         } else if (val instanceof Number num) {
@@ -170,6 +188,22 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
             cell.setCellStyle(dateStyle);
         } else {
             cell.setCellValue(val.toString());
+        }
+    }
+
+    private Path templatePath(String templateId) {
+        if (templateId == null || templateId.isBlank() || templateId.contains("/") || templateId.contains("\\")) {
+            throw new TemplateProcessingException("Mã template không hợp lệ!");
+        }
+        Path path = uploadDir.resolve(templateId).normalize();
+        if (!path.getParent().equals(uploadDir)) throw new TemplateProcessingException("Mã template không hợp lệ!");
+        if (!Files.isRegularFile(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) throw new TemplateNotFoundException(templateId);
+        return path;
+    }
+
+    private void validateHeaderRow(int index) {
+        if (index < 0 || index >= SpreadsheetVersion.EXCEL2007.getMaxRows()) {
+            throw new TemplateProcessingException("Dòng tiêu đề Excel không hợp lệ!");
         }
     }
 }

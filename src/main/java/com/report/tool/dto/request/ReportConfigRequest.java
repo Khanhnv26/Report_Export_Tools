@@ -36,6 +36,7 @@ public class ReportConfigRequest {
     public static class BaseTable {
         private String dbId;
         private String tableName;
+        private String alias;
 
         @Builder.Default
         private List<String> columns = new ArrayList<>();
@@ -52,6 +53,7 @@ public class ReportConfigRequest {
     public static class JoinTable {
         private String dbId;
         private String tableName;
+        private String alias;
 
         @Builder.Default
         private List<String> columns = new ArrayList<>();

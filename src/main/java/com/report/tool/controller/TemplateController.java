@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -21,6 +23,12 @@ import java.util.List;
 public class TemplateController {
 
     private final ExcelTemplateService templateService;
+
+    @GetMapping("/{templateId}/columns")
+    public ResponseEntity<ApiResponse<List<ExcelColumnResponse>>> headers(
+            @PathVariable String templateId, @RequestParam(defaultValue = "0") int headerRow) {
+        return ResponseEntity.ok(ApiResponse.success(templateService.readHeaders(templateId, headerRow)));
+    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<TemplateUploadResponse>> uploadTemplate(

@@ -35,6 +35,8 @@ public class MetadataServiceImpl implements MetadataService {
                 .dbType(saved.getDbType())
                 .host(saved.getHost())
                 .port(saved.getPort())
+                .username(saved.getUsername())
+                .connected(dataSourceRegistry.isConnected(saved.getId()))
                 .build();
     }
 
@@ -53,6 +55,8 @@ public class MetadataServiceImpl implements MetadataService {
                         .dbType(db.getDbType())
                         .host(db.getHost())
                         .port(db.getPort())
+                        .username(db.getUsername())
+                        .connected(dataSourceRegistry.isConnected(db.getId()))
                         .build())
                 .toList();
     }
