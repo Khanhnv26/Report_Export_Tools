@@ -68,6 +68,10 @@ public class MetadataServiceImpl implements MetadataService {
             String schema = conn.getSchema();
             try (ResultSet rs = meta.getTables(catalog, schema, "%", new String[]{"TABLE", "VIEW"})) {
                 while (rs.next()) {
+                    String tableSchema = rs.getString("TABLE_SCHEM");
+                    if (tableSchema != null && (tableSchema.equalsIgnoreCase("sys") || tableSchema.equalsIgnoreCase("information_schema"))) {
+                        continue;
+                    }
                     tables.add(rs.getString("TABLE_NAME"));
                 }
             }

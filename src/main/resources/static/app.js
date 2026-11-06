@@ -14,11 +14,11 @@ createApp({
 
       newDb: {
         name: '',
-        dbType: 'POSTGRESQL',
+        dbType: 'MYSQL',
         host: 'localhost',
-        port: 5432,
+        port: 3306,
         database: '',
-        username: 'postgres',
+        username: 'root',
         password: ''
       },
 
@@ -120,7 +120,13 @@ createApp({
     },
 
     onDbTypeChange() {
-      this.newDb.port = this.newDb.dbType === 'MYSQL' ? 3306 : 5432;
+      if (this.newDb.dbType === 'MYSQL') {
+        this.newDb.port = 3306;
+      } else if (this.newDb.dbType === 'SQLSERVER') {
+        this.newDb.port = 1433;
+      } else {
+        this.newDb.port = 5432;
+      }
     },
 
     async saveNewDatabase() {

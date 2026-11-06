@@ -127,12 +127,23 @@ public class DataSourceRegistry {
 
     private String buildJdbcUrl(DBConnectionRequest request) {
         String type = request.getDbType() != null ? request.getDbType().toUpperCase() : "POSTGRESQL";
+        int port = request.getPort() > 0 ? request.getPort() : defaultPort(type);
         return switch (type) {
             case "MYSQL" -> String.format("jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true",
-                    request.getHost(), request.getPort(), request.getDatabase());
+                    request.getHost(), port, request.getDatabase());
             case "POSTGRESQL" -> String.format("jdbc:postgresql://%s:%d/%s",
-                    request.getHost(), request.getPort(), request.getDatabase());
+                    request.getHost(), port, request.getDatabase());
+            case "SQLSERVER", "MSSQL" -> String.format("jdbc:sqlserver://%s:%d;databaseName=%s;encrypt=true;trustServerCertificate=true;",
+                    request.getHost(), port, request.getDatabase());
             default -> throw new DatabaseConnectionException("Chưa hỗ trợ loại Database: " + type);
+        };
+    }
+
+    private int defaultPort(String type) {
+        return switch (type) {
+            case "MYSQL" -> 3306;
+            case "SQLSERVER", "MSSQL" -> 1433;
+            default -> 5432;
         };
     }
 
@@ -141,6 +152,7 @@ public class DataSourceRegistry {
         return switch (type) {
             case "MYSQL" -> "com.mysql.cj.jdbc.Driver";
             case "POSTGRESQL" -> "org.postgresql.Driver";
+            case "SQLSERVER", "MSSQL" -> "com.microsoft.sqlserver.jdbc.SQLServerDriver";
             default -> throw new DatabaseConnectionException("Chưa hỗ trợ loại Database: " + type);
         };
     }
