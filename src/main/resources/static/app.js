@@ -35,6 +35,7 @@ createApp({
         baseTable: {
           dbId: '',
           tableName: '',
+          alias: '',
           columns: [],
           filterColumn: '',
           fromDate: '',
@@ -54,7 +55,7 @@ createApp({
   computed: {
     allSelectedFields() {
       const list = [];
-      const baseName = this.config.baseTable.tableName;
+      const baseName = this.config.baseTable.alias || this.config.baseTable.tableName;
       if (baseName && this.config.baseTable.columns) {
         this.config.baseTable.columns.forEach(col => {
           list.push(`${baseName}.${col}`);
@@ -64,7 +65,7 @@ createApp({
       this.config.joins.forEach(j => {
         if (j.tableName && j.columns) {
           j.columns.forEach(col => {
-            list.push(`${j.tableName}.${col}`);
+            list.push(`${j.alias || j.tableName}.${col}`);
           });
         }
       });
@@ -110,7 +111,10 @@ createApp({
         if (json.status === 200 && json.data) {
           this.databases = json.data;
           if (!this.config.baseTable.dbId && this.databases.length > 0) {
-            this.config.baseTable.dbId = this.databases[0].id;
+            this.config.baseTable.dbId = (this.databases.find(db => db.connected) || this.databases[0]).id;
+            this.onBaseDbChange();
+          } else if (this.config.baseTable.dbId && !this.config.baseTable.tableName
+              && this.databases.some(db => db.id === this.config.baseTable.dbId && db.connected)) {
             this.onBaseDbChange();
           }
         }
@@ -127,6 +131,20 @@ createApp({
       } else {
         this.newDb.port = 5432;
       }
+    },
+
+    editDatabase(db) {
+      this.newDb = {
+        id: db.id, name: db.name, dbType: db.dbType, host: db.host, port: db.port,
+        database: db.databaseName, username: db.username || '', password: ''
+      };
+      this.showConnectModal = true;
+    },
+
+    openNewDatabase() {
+      this.newDb = { name: '', dbType: 'MYSQL', host: 'localhost', port: 3306,
+        database: '', username: '', password: '' };
+      this.showConnectModal = true;
     },
 
     async saveNewDatabase() {
@@ -225,6 +243,7 @@ createApp({
       const newJoin = {
         dbId: defaultDbId,
         tableName: '',
+        alias: `join_${Date.now()}_${this.config.joins.length + 1}`,
         columns: [],
         sourceKey: '',
         targetKey: 'id',
@@ -272,7 +291,7 @@ createApp({
         const res = await fetch(`/api/databases/${join.dbId}/tables/${join.tableName}/columns`);
         const json = await res.json();
         if (json.status === 200 && json.data) {
-          join.availableColumns = join.data;
+          join.availableColumns = json.data;
           join.columns = join.availableColumns.map(c => c.name);
         }
       } catch (err) {
@@ -300,11 +319,7 @@ createApp({
           this.config.templateId = this.templateId;
           this.excelColumns = json.data.columns;
 
-          this.excelColumns.forEach(c => {
-            if (!this.config.mapping[c.letter]) {
-              this.config.mapping[c.letter] = '';
-            }
-          });
+          this.config.mapping = Object.fromEntries(this.excelColumns.map(c => [c.letter, '']));
 
           this.smartAutoMatch();
         } else {
@@ -325,6 +340,7 @@ createApp({
       };
 
       this.excelColumns.forEach(col => {
+        if (this.config.mapping[col.letter]) return;
         const targetClean = normalize(col.title);
         for (const field of this.allSelectedFields) {
           const colName = field.includes('.') ? field.split('.')[1] : field;
@@ -335,12 +351,13 @@ createApp({
             break;
           }
 
-          const isCode = targetClean.includes('ma') && fieldClean.includes('code');
-          const isName = (targetClean.includes('ten') || targetClean.includes('khach')) && (fieldClean.includes('name') || fieldClean.includes('user'));
-          const isPhone = (targetClean.includes('sdt') || targetClean.includes('thoai')) && fieldClean.includes('phone');
-          const isMoney = (targetClean.includes('tien') || targetClean.includes('tong') || targetClean.includes('gia')) && (fieldClean.includes('amount') || fieldClean.includes('price') || fieldClean.includes('total'));
-          const isDate = (targetClean.includes('ngay') || targetClean.includes('gio') || targetClean.includes('gian')) && (fieldClean.includes('time') || fieldClean.includes('at') || fieldClean.includes('date'));
-          const isStatus = targetClean.includes('trangthai') && fieldClean.includes('status');
+          const isId = fieldClean === 'id' || fieldClean.endsWith('id');
+          const isCode = !isId && targetClean.includes('ma') && fieldClean.includes('code');
+          const isName = !isId && (targetClean.includes('ten') || targetClean.includes('khach')) && (fieldClean.includes('name') || (fieldClean.includes('user') && !isId));
+          const isPhone = !isId && (targetClean.includes('sdt') || targetClean.includes('thoai')) && fieldClean.includes('phone');
+          const isMoney = !isId && (targetClean.includes('tien') || targetClean.includes('tong') || targetClean.includes('gia')) && (fieldClean.includes('amount') || fieldClean.includes('price') || fieldClean.includes('total'));
+          const isDate = !isId && (targetClean.includes('ngay') || targetClean.includes('gio') || targetClean.includes('gian')) && (fieldClean.includes('time') || fieldClean.includes('at') || fieldClean.includes('date'));
+          const isStatus = !isId && targetClean.includes('trangthai') && fieldClean.includes('status');
 
           if (isCode || isName || isPhone || isMoney || isDate || isStatus) {
             this.config.mapping[col.letter] = field;
@@ -447,11 +464,51 @@ createApp({
       alert(`Đã lưu mẫu "${name}" thành công!`);
     },
 
-    loadProfile() {
+    async refreshHeaders() {
+      if (!this.config.templateId) return;
+      const res = await fetch(`/api/templates/${encodeURIComponent(this.config.templateId)}/columns?headerRow=${this.config.headerRow}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Không đọc được template');
+      this.excelColumns = json.data;
+      this.config.mapping = Object.fromEntries(this.excelColumns.map(c => [c.letter, this.config.mapping[c.letter] || '']));
+    },
+
+    async onHeaderRowChange() {
+      try { await this.refreshHeaders(); }
+      catch (err) { alert(err.message); }
+    },
+
+    async loadProfile() {
       if (!this.selectedProfile || !this.savedProfiles[this.selectedProfile]) return;
       const profileData = this.savedProfiles[this.selectedProfile];
       this.config = JSON.parse(JSON.stringify(profileData));
-      alert(`Đã nạp mẫu cấu hình "${this.selectedProfile}"!`);
+      this.templateId = this.config.templateId;
+      this.templateFileName = this.templateId;
+      this.previewRows = [];
+      this.excelColumns = [];
+      try {
+        const loadMetadata = async (source) => {
+          const base = `/api/databases/${encodeURIComponent(source.dbId)}/tables`;
+          const [tables, columns] = await Promise.all([
+            fetch(base), fetch(`${base}/${encodeURIComponent(source.tableName)}/columns`)
+          ]);
+          const [tableData, columnData] = await Promise.all([tables.json(), columns.json()]);
+          if (!tables.ok || !columns.ok) throw new Error(tableData.message || columnData.message || 'Không đọc được cấu hình nguồn');
+          return { tables: tableData.data, columns: columnData.data };
+        };
+        const metadata = await loadMetadata(this.config.baseTable);
+        this.baseTables = metadata.tables;
+        this.baseColumns = metadata.columns;
+        await Promise.all(this.config.joins.map(async join => {
+          const metadata = await loadMetadata(join);
+          join.availableTables = metadata.tables;
+          join.availableColumns = metadata.columns;
+        }));
+        await this.refreshHeaders();
+        alert(`Đã nạp mẫu cấu hình "${this.selectedProfile}"!`);
+      } catch (err) {
+        alert('Không thể nạp đầy đủ cấu hình: ' + err.message);
+      }
     }
   }
 }).mount('#app');
