@@ -139,7 +139,7 @@ jpackage `
   --name "ReportExportTool" `
   --input target/ `
   --main-jar microservice-report-tool-1.0.0.jar `
-  --main-class com.report.tool.ReportToolApplication `
+  --main-class org.springframework.boot.loader.launch.JarLauncher `
   --dest dist/ `
   --win-shortcut `
   --win-menu

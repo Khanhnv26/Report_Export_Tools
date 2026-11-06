@@ -44,7 +44,7 @@ jobs:
           } elseif (Test-Path "C:\Program Files (x86)\WiX Toolset v3.14\bin") {
             $env:PATH = "C:\Program Files (x86)\WiX Toolset v3.14\bin;" + $env:PATH
           }
-          jpackage --type exe --name "ReportExportTool" --app-version "1.0.0" --input target/ --main-jar microservice-report-tool-1.0.0.jar --main-class com.report.tool.ReportToolApplication --win-shortcut --win-menu --win-dir-chooser --win-per-user-install --dest dist/
+          jpackage --type exe --name "ReportExportTool" --app-version "1.0.0" --input target/ --main-jar microservice-report-tool-1.0.0.jar --main-class org.springframework.boot.loader.launch.JarLauncher --win-shortcut --win-menu --win-dir-chooser --win-per-user-install --win-console --dest dist/
           $builtExe = Get-ChildItem dist/*.exe | Select-Object -First 1
           Copy-Item $builtExe.FullName dist/ReportExportTool.exe
 

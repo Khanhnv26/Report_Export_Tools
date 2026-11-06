@@ -26,6 +26,18 @@ public class ReportToolApplication {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URI("http://localhost:8080"));
+                return;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            String os = System.getProperty("os.name", "").toLowerCase();
+            if (os.contains("win")) {
+                new ProcessBuilder("cmd", "/c", "start", "http://localhost:8080").start();
+            } else if (os.contains("mac")) {
+                new ProcessBuilder("open", "http://localhost:8080").start();
+            } else if (os.contains("nix") || os.contains("nux")) {
+                new ProcessBuilder("xdg-open", "http://localhost:8080").start();
             }
         } catch (Exception ignored) {
         }
