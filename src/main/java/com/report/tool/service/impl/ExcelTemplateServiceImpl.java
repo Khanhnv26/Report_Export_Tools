@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.sql.Timestamp;
@@ -275,7 +276,7 @@ public class ExcelTemplateServiceImpl implements ExcelTemplateService {
         }
         Path path = uploadDir.resolve(templateId).normalize();
         if (!path.getParent().equals(uploadDir)) throw new TemplateProcessingException("Mã template không hợp lệ!");
-        if (!Files.isRegularFile(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) throw new TemplateNotFoundException(templateId);
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new TemplateNotFoundException(templateId);
         return path;
     }
 

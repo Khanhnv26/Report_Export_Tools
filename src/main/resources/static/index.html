@@ -13,10 +13,15 @@
   </header>
   <div class="workspace" v-if="view==='report'">
     <aside class="sidebar">
-      <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
-      <label for="profile">Mẫu đã lưu</label><select id="profile" v-model="selectedProfile" @change="loadProfile"><option value="">Chọn mẫu…</option><option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option></select>
-      <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
-      <ol class="steps"><li v-for="(title,index) in steps" :key="title"><button :class="{current:step===index+1}" @click="step=index+1" :aria-current="step===index+1?'step':null"><span class="step-number">{{ index+1 }}</span>{{ title }}</button></li></ol>
+      <div class="sidebar-card">
+        <h2>Mẫu báo cáo</h2><p class="muted">Chọn mẫu đã thiết lập để bắt đầu nhanh.</p>
+        <label for="profile">Mẫu đã lưu</label><select id="profile" v-model="selectedProfile" @change="loadProfile"><option value="">Chọn mẫu…</option><option v-for="(profile,name) in savedProfiles" :key="name" :value="name">{{ name }}</option></select>
+        <button class="wide" @click="saveCurrentProfile">Lưu cấu hình thành mẫu</button>
+      </div>
+      <div class="sidebar-card">
+        <h2>Tiến trình</h2>
+        <ol class="steps"><li v-for="(title,index) in steps" :key="title"><button :class="{current:step===index+1}" @click="step=index+1" :aria-current="step===index+1?'step':null"><span class="step-number">{{ index+1 }}</span>{{ title }}</button></li></ol>
+      </div>
       <p class="sidebar-note">Mẫu được lưu trên trình duyệt này.<br>Giới hạn mặc định: 50.000 dòng.</p>
       <div v-if="job" class="sidebar-job"><strong>Xuất báo cáo</strong><p role="status">{{ job.message }}</p><button @click="step=4">Xem tác vụ</button></div>
     </aside>
@@ -26,14 +31,31 @@
       <section v-if="step===1" aria-label="Cấu hình nguồn">
         <p class="lead">Chọn dữ liệu cho báo cáo. Nếu đã có mẫu, bạn chỉ cần kiểm tra nguồn và chuyển đến bộ lọc.</p>
         <p v-if="errors.source" class="field-error" role="alert">{{ errors.source }}</p>
-        <div class="section-heading"><h2>Bảng gốc</h2><button @click="view='sources'">Quản lý kết nối</button></div>
-        <div class="form-grid three">
-          <label>Database<select aria-label="Database" v-model="config.baseTable.dbId" @change="onBaseDbChange"><option value="">Chọn kết nối…</option><option v-for="db in databases" :key="db.id" :value="db.id">{{ db.name }}{{ db.connected?'':' · cần kết nối lại' }}</option></select></label>
-          <label>Bảng<select aria-label="Bảng" v-model="config.baseTable.tableName" @change="onBaseTableChange"><option value="">Chọn bảng…</option><option v-for="table in baseTables" :key="table">{{ table }}</option></select></label>
-          <label>Tên nguồn (alias)<input v-model="config.baseTable.alias" @change="syncOutputColumns" placeholder="Mặc định dùng tên bảng"><span class="help">Dùng tên riêng khi ghép các bảng trùng tên.</span></label>
+        <div class="form-card">
+          <div class="section-heading"><h2>Bảng gốc</h2><button @click="view='sources'">Quản lý kết nối</button></div>
+          <div class="form-grid three">
+            <label>Database<select aria-label="Database" v-model="config.baseTable.dbId" @change="onBaseDbChange"><option value="">Chọn kết nối…</option><option v-for="db in databases" :key="db.id" :value="db.id">{{ db.name }}{{ db.connected?'':' · cần kết nối lại' }}</option></select><span class="help-placeholder">&nbsp;</span></label>
+            <label>Bảng<select aria-label="Bảng" v-model="config.baseTable.tableName" @change="onBaseTableChange"><option value="">Chọn bảng…</option><option v-for="table in baseTables" :key="table">{{ table }}</option></select><span class="help-placeholder">&nbsp;</span></label>
+            <label>Tên nguồn (alias)<input v-model="config.baseTable.alias" @change="syncOutputColumns" placeholder="Mặc định dùng tên bảng"><span class="help">Dùng tên riêng khi ghép các bảng trùng tên.</span></label>
+          </div>
         </div>
-        <div v-if="baseColumns.length" class="field-picker"><div class="section-heading"><label for="column-search">Cột nguồn · {{ config.baseTable.columns.length }} đã chọn</label><div class="button-group"><button @click="selectAllBase(true)">Chọn tất cả</button><button @click="selectAllBase(false)">Bỏ chọn</button></div></div><input id="column-search" type="search" v-model="sourceSearch" placeholder="Tìm tên cột…"><div class="checks"><label v-for="column in filteredBaseColumns" :key="column.name"><input type="checkbox" :value="column.name" v-model="config.baseTable.columns" @change="syncOutputColumns"><span>{{ column.name }}<small>{{ column.type }}</small></span></label></div></div>
-        <div class="section-heading spaced"><div><h2>Ghép dữ liệu từ nguồn khác</h2><p class="muted">Không khớp vẫn giữ dòng gốc. Một khóa khớp nhiều bản ghi sẽ tạo nhiều dòng.</p></div><button @click="addJoinTable">Thêm nguồn ghép</button></div>
+        <div v-if="baseColumns.length" class="field-picker">
+          <div class="section-heading">
+            <label for="column-search">Cột nguồn · {{ config.baseTable.columns.length }} đã chọn</label>
+            <div class="button-group">
+              <button @click="selectAllBase(true)">Chọn tất cả</button>
+              <button @click="selectAllBase(false)">Bỏ chọn</button>
+            </div>
+          </div>
+          <input id="column-search" type="search" v-model="sourceSearch" placeholder="Tìm tên cột…">
+          <div class="checks">
+            <label v-for="column in filteredBaseColumns" :key="column.name">
+              <input type="checkbox" :value="column.name" v-model="config.baseTable.columns" @change="syncOutputColumns">
+              <span>{{ column.name }}<small>{{ column.type }}</small></span>
+            </label>
+          </div>
+        </div>
+        <div class="section-heading spaced"><div><h2>Ghép dữ liệu từ nguồn khác</h2><p class="muted">Không khớp vẫn giữ dòng gốc. Một khóa khớp nhiều bản ghi sẽ tạo nhiều dòng.</p></div><button @click="addJoinTable">+ Thêm nguồn ghép</button></div>
         <p v-if="!config.joins.length" class="empty-inline">Chưa thêm bảng phụ. Bạn có thể xuất dữ liệu chỉ từ bảng gốc.</p>
         <details v-for="(join,index) in config.joins" :key="index" class="join" open>
           <summary>Nguồn {{ index+1 }} · {{ join.alias || join.tableName || 'Chưa chọn bảng' }}</summary>
@@ -65,11 +87,18 @@
 
       <section v-if="step===3" aria-label="Bộ lọc">
         <p class="lead">Thu hẹp dữ liệu trước khi xuất. Bộ lọc ngày ở bảng gốc được thực thi ngay tại database.</p>
-        <p v-if="errors.filter" class="field-error" role="alert">{{ errors.filter }}</p><h2>Khoảng ngày của bảng gốc</h2>
-        <div class="form-grid three"><label>Cột ngày<select v-model="config.baseTable.filterColumn"><option value="">Không lọc ngày</option><option v-for="column in baseColumns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label><label>Từ ngày<input type="date" v-model="config.baseTable.fromDate"></label><label>Đến hết ngày<input type="date" v-model="config.baseTable.toDate"></label></div>
-        <div class="section-heading spaced"><div><h2>Điều kiện sau khi ghép</h2><p class="muted">Các điều kiện được kết hợp bằng “VÀ”.</p></div><button @click="addFilter" :disabled="config.filters.length>=20">Thêm điều kiện</button></div>
+        <p v-if="errors.filter" class="field-error" role="alert">{{ errors.filter }}</p>
+        <div class="form-card">
+          <h2>Khoảng ngày của bảng gốc</h2>
+          <div class="form-grid three"><label>Cột ngày<select v-model="config.baseTable.filterColumn"><option value="">Không lọc ngày</option><option v-for="column in baseColumns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label><label>Từ ngày<input type="date" v-model="config.baseTable.fromDate"></label><label>Đến hết ngày<input type="date" v-model="config.baseTable.toDate"></label></div>
+        </div>
+        <div class="section-heading spaced"><div><h2>Điều kiện sau khi ghép</h2><p class="muted">Các điều kiện được kết hợp bằng “VÀ”.</p></div><button @click="addFilter" :disabled="config.filters.length>=20">+ Thêm điều kiện</button></div>
         <div v-for="(filter,index) in config.filters" :key="index" class="filter-row"><label><span class="sr-only">Trường lọc</span><select v-model="filter.field"><option v-for="field in allSelectedFields" :key="field">{{ field }}</option></select></label><label><span class="sr-only">Phép so sánh</span><select v-model="filter.operator"><option v-for="operator in operators" :key="operator.id" :value="operator.id">{{ operator.label }}</option></select></label><label v-if="!['EMPTY','NOT_EMPTY'].includes(filter.operator)"><span class="sr-only">Giá trị lọc</span><input v-model="filter.value" placeholder="Giá trị so sánh"></label><span v-else></span><button @click="config.filters.splice(index,1)" aria-label="Bỏ điều kiện lọc">Bỏ</button></div>
-        <p v-if="!config.filters.length" class="empty-inline">Chưa thêm điều kiện sau ghép.</p><h2 class="spaced">Sắp xếp kết quả</h2><div class="form-grid two"><label>Theo trường<select v-model="config.sortField"><option value="">Giữ thứ tự đọc được</option><option v-for="field in allSelectedFields" :key="field">{{ field }}</option></select></label><label>Chiều sắp xếp<select v-model="config.sortDirection" :disabled="!config.sortField"><option value="ASC">Tăng dần</option><option value="DESC">Giảm dần</option></select></label></div>
+        <p v-if="!config.filters.length" class="empty-inline">Chưa thêm điều kiện sau ghép.</p>
+        <div class="form-card spaced">
+          <h2>Sắp xếp kết quả</h2>
+          <div class="form-grid two"><label>Theo trường<select v-model="config.sortField" aria-label="Theo trường"><option value="">Giữ thứ tự đọc được</option><option v-for="field in allSelectedFields" :key="field">{{ field }}</option></select></label><label>Chiều sắp xếp<select v-model="config.sortDirection" :disabled="!config.sortField" aria-label="Chiều sắp xếp"><option value="ASC">Tăng dần</option><option value="DESC">Giảm dần</option></select></label></div>
+        </div>
         <p class="notice" v-if="config.filters.length || config.sortField">Preview sẽ đọc đủ dữ liệu trong giới hạn báo cáo để áp dụng lọc và sắp xếp chính xác. Thao tác này có thể mất thêm thời gian.</p>
       </section>
 
@@ -78,13 +107,17 @@
         <div v-if="previewLoading" class="notice" role="status">Đang đọc dữ liệu và áp dụng cấu hình đầu ra. Bạn có thể tiếp tục chỉnh cấu hình.</div>
         <div v-if="previewStale" class="notice warning" role="status">Cấu hình đã thay đổi. Cập nhật preview trước khi xuất file.</div>
         <div v-if="preview">
-          <p class="preview-meta">{{ preview.rows.length }} dòng hiển thị · {{ preview.sampled?'Dữ liệu mẫu':'Đã xử lý '+preview.processedRows.toLocaleString('vi-VN')+' dòng' }} · {{ (preview.elapsedMillis/1000).toFixed(2) }} giây</p>
+          <div class="preview-meta-bar"><span class="meta-pill"><strong>{{ preview.rows.length }}</strong> dòng hiển thị</span><span class="meta-pill">{{ preview.sampled?'Dữ liệu mẫu':'Đã xử lý '+preview.processedRows.toLocaleString('vi-VN')+' dòng' }}</span><span class="meta-pill font-mono">{{ (preview.elapsedMillis/1000).toFixed(2) }} giây</span></div>
           <ul v-if="preview.warnings.length" class="notice warning"><li v-for="warning in preview.warnings" :key="warning">{{ warning }}{{ preview.sampled?' (Trong dữ liệu mẫu.)':'' }}</li></ul>
           <div class="table-wrap preview-scroll" :class="{'is-stale':previewStale}" :aria-busy="previewLoading"><table class="preview-table"><thead><tr><th scope="col" class="row-number">#</th><th v-for="(column,index) in preview.columns" :key="index" scope="col"><small v-if="isTemplate">{{ column.letter }} · </small>{{ column.title }}</th></tr></thead><tbody><tr v-for="(row,index) in preview.rows" :key="index"><th scope="row" class="row-number">{{ index+1 }}</th><td v-for="(value,column) in row" :key="column" :class="{blank:value===''}">{{ value===''?'—':value }}</td></tr></tbody></table></div>
           <p v-if="!preview.rows.length" class="empty-inline">Không có dòng phù hợp. Kiểm tra lại bộ lọc.</p><p class="help spaced">Preview dùng cùng quy tắc chuyển kiểu và định dạng với file xuất. Dữ liệu được đọc lại khi tạo file. Với template, bảng này hiển thị các cột đã ánh xạ.</p>
         </div>
         <div v-else-if="!previewLoading" class="empty-preview"><h2>Chưa có preview</h2><p>Kiểm tra nguồn, chọn cột đầu ra, sau đó bấm “Tạo preview”.</p><button @click="fetchPreview">Tạo preview</button></div>
-        <section v-if="job" class="job-panel" aria-label="Tác vụ xuất"><div class="section-heading"><h2>File báo cáo</h2><span class="status" :class="job.state.toLowerCase()">{{ {QUEUED:'Đang chờ',QUERYING:'Đang đọc dữ liệu',PREPARING:'Đang chuẩn bị',WRITING:'Đang ghi file',READY:'Sẵn sàng',FAILED:'Thất bại',CANCELLED:'Đã hủy'}[job.state] }}</span></div><p role="status">{{ job.message }}</p><p class="muted">Tác vụ dùng cấu hình tại lúc bấm tạo file. File có hiệu lực tối đa một giờ nếu không được truy cập.</p><p v-if="job.state==='READY'"><strong>{{ job.rowCount.toLocaleString('vi-VN') }}</strong> dòng kết quả</p><ul v-if="job.warnings.length" class="notice warning"><li v-for="warning in job.warnings" :key="warning">{{ warning }}</li></ul><p v-if="jobPollingError" class="field-error">{{ jobPollingError }} <button @click="pollJob(job.id)">Thử lại</button></p><div class="button-group"><button v-if="activeJob" class="danger-text" @click="cancelJob">Hủy tác vụ</button><button v-if="job.state==='READY'" class="primary" @click="downloadJob">Tải file Excel</button><button v-if="job.state==='FAILED' || job.state==='CANCELLED'" @click="exportReport" :disabled="!canExport">Tạo lại</button></div></section>
+        <section v-if="job" class="job-panel" aria-label="Tác vụ xuất">
+          <div class="section-heading"><h2>File báo cáo</h2><span class="status" :class="job.state.toLowerCase()">{{ {QUEUED:'Đang chờ',QUERYING:'Đang đọc dữ liệu',PREPARING:'Đang chuẩn bị',WRITING:'Đang ghi file',READY:'Sẵn sàng',FAILED:'Thất bại',CANCELLED:'Đã hủy'}[job.state] }}</span></div>
+          <div class="job-progress-track" v-if="activeJob"><div class="job-progress-bar" :class="job.state.toLowerCase()"></div></div>
+          <p role="status">{{ job.message }}</p><p class="muted">Tác vụ dùng cấu hình tại lúc bấm tạo file. File có hiệu lực tối đa một giờ nếu không được truy cập.</p><p v-if="job.state==='READY'"><strong>{{ job.rowCount.toLocaleString('vi-VN') }}</strong> dòng kết quả</p><ul v-if="job.warnings.length" class="notice warning"><li v-for="warning in job.warnings" :key="warning">{{ warning }}</li></ul><p v-if="jobPollingError" class="field-error">{{ jobPollingError }} <button @click="pollJob(job.id)">Thử lại</button></p><div class="button-group"><button v-if="activeJob" class="danger-text" @click="cancelJob">Hủy tác vụ</button><button v-if="job.state==='READY'" class="primary" @click="downloadJob">Tải file Excel</button><button v-if="job.state==='FAILED' || job.state==='CANCELLED'" @click="exportReport" :disabled="!canExport">Tạo lại</button></div>
+        </section>
       </section>
 
       <footer class="step-footer"><button v-if="step>1" @click="step--">Quay lại</button><span v-else class="muted">Thiết lập một lần, dùng lại qua mẫu báo cáo.</span><button v-if="step<4" class="primary" @click="step++">Tiếp: {{ steps[step] }}</button><button v-else @click="saveCurrentProfile">Lưu mẫu báo cáo</button></footer>

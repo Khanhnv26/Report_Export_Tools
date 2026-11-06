@@ -24,6 +24,7 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.time.DateTimeException;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Semaphore;
 
 @Service
@@ -83,7 +84,7 @@ public class ReportEngineServiceImpl implements ReportEngineService {
                 rows = join(rows, join, sourceColumns, limit, preview);
             }
             return rows;
-        } catch (java.util.concurrent.CancellationException e) {
+        } catch (CancellationException e) {
             throw e;
         } catch (AppException e) {
             throw e;

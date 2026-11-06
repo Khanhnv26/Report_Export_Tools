@@ -1,6 +1,7 @@
 package com.report.tool.service;
 
 import com.report.tool.dto.response.ExcelColumnResponse;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.OutputStream;
@@ -8,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 public interface ExcelTemplateService {
-    org.apache.poi.ss.usermodel.Workbook openTemplate(String templateId);
+    Workbook openTemplate(String templateId);
 
     String saveTemplate(MultipartFile file);
 

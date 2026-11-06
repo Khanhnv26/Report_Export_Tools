@@ -25,6 +25,7 @@ import javax.sql.DataSource;
 import java.io.File;
 import java.sql.Connection;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -161,7 +162,7 @@ public class DataSourceRegistry {
     }
 
     static String passwordVariable(String id) {
-        return "REPORT_DB_PASSWORD_" + id.toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+        return "REPORT_DB_PASSWORD_" + id.toUpperCase(Locale.ROOT).replace('-', '_');
     }
 
     private DBConnectionRequest withoutPassword(DBConnectionRequest request) {

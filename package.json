@@ -1,0 +1,9 @@
+{
+  "name": "report-workspace-ui-tests",
+  "private": true,
+  "scripts": {
+    "test": "node src/test/js/app-regression.mjs",
+    "test:browser": "node src/test/js/browser-regression.cjs"
+  },
+  "devDependencies": { "playwright": "1.64.1" }
+}
