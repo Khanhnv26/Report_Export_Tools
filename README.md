@@ -140,6 +140,7 @@ jpackage `
   --input target/ `
   --main-jar microservice-report-tool-1.0.0.jar `
   --main-class org.springframework.boot.loader.launch.JarLauncher `
+  --icon assets/app.ico `
   --dest dist/ `
   --win-shortcut `
   --win-menu
