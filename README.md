@@ -1,115 +1,139 @@
 # Report Export Tool
 
-Hướng dẫn giao diện hiện tại: [Report Workspace](docs/REPORT_WORKSPACE.md). Giao diện có bốn bước, xuất bảng mới hoặc template, preview theo định dạng và xuất nền có thể hủy.
-
 > **Microservice Data Aggregation & Excel Stream Engine**  
-> Công cụ tổng hợp dữ liệu phân tán liên cơ sở dữ liệu (Cross-Database Hash-Join) và stream nạp dữ liệu vào file Excel mẫu `.xlsx` giữ cấu trúc và định dạng template trong phạm vi được mô tả ở hướng dẫn.
+> Công cụ tổng hợp dữ liệu phân tán liên cơ sở dữ liệu (Cross-Database Hash-Join) và stream xuất file Excel (`.xlsx`) dạng bảng mới hoặc điền trực tiếp vào file mẫu template giữ nguyên định dạng.
 
 [![Java 21](https://img.shields.io/badge/Java-21%20LTS-007396?logo=openjdk&logoColor=white)](https://www.oracle.com/java/)
 [![Spring Boot 3.3.4](https://img.shields.io/badge/Spring%20Boot-3.3.4-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Apache POI 5.2.5](https://img.shields.io/badge/Apache%20POI-5.2.5-D22128?logo=apache&logoColor=white)](https://poi.apache.org/)
-[![Vue 3](https://img.shields.io/badge/Vue.js-3.x%20CDN-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![Vue 3](https://img.shields.io/badge/Vue.js-3.x%20Embedded-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 1. Bài toán nghiệp vụ & Giải pháp
+## 1. Giới thiệu & Điểm nổi bật
 
-Trong kiến trúc **Microservices**, mỗi dịch vụ (Order, User/Auth, CRM, Billing, Inventory) thường sở hữu cơ sở dữ liệu riêng biệt (*Database per Service*) và chạy trên các hệ quản trị khác nhau (MySQL, PostgreSQL, SQL Server, Oracle) qua mạng nội bộ hoặc OpenVPN. 
+Trong kiến trúc **Microservices** (*Database-per-Service*), các phân hệ (Đơn hàng, Khách hàng, CRM, Kế toán...) thường lưu trữ trên nhiều hệ quản trị cơ sở dữ liệu độc lập (MySQL, PostgreSQL, SQL Server, Oracle).
 
-Khi cần xuất các báo cáo đối soát tổng hợp (ví dụ: *Đơn hàng từ MySQL + Họ tên, SĐT khách từ PostgreSQL/SQL Server + Thông tin xuất hóa đơn từ Oracle*):
-- ❌ **Cách truyền thống:** Viết script SQL riêng lẻ, xuất các file CSV rời rạc rồi dùng VLOOKUP/PowerQuery trong Excel, vừa tốn thời gian vừa dễ sai sót định dạng.
-- ✅ **Với Report Export Tool:** Người dùng chỉ cần kéo thả file Excel mẫu (`.xlsx`), kết nối các DB, chọn bảng và khóa nối. Hệ thống tự động **Hash-Join $O(1)$ trong RAM** và stream kết quả trực tiếp vào file template với đầy đủ công thức, màu sắc, font chữ và viền kẻ ban đầu.
+**Report Export Tool** giải quyết bài toán đối soát và kết xuất báo cáo tổng hợp:
+- **Hash-Join trên RAM $O(1)$:** Ghép dữ liệu liên database tự động qua batching khóa (`IN (:keys)`), giảm thiểu độ trễ mạng qua LAN/VPN.
+- **2 chế độ xuất linh hoạt:**
+  - *Bảng Excel mới:* Sử dụng Apache POI SXSSF streaming siêu nhẹ, kiểm soát tiêu đề, thứ tự, kiểu dữ liệu và định dạng.
+  - *Dùng file mẫu (Template):* Tự động điền dữ liệu vào sheet đầu tiên của file `.xlsx` sẵn có, giữ nguyên toàn bộ font chữ, màu sắc, viền khung và công thức.
+- **Quản lý mẫu báo cáo tiện lợi:** Lưu trữ, nạp lại, đổi tên và quản lý danh sách mẫu báo cáo đã lưu; có nút làm mới nhanh cấu hình.
+- **Tự phục hồi kết nối (Auto-Retry):** Nhận diện lỗi kết nối JDBC tạm thời và tự động thử lại một lần an toàn mà không làm gián đoạn tác vụ.
+- **An toàn & bảo mật:** Kết nối `ReadOnly`, chống SQL Injection bằng whitelist identifier, không lưu mật khẩu vào ổ đĩa, hỗ trợ HTTP Basic Auth khi chia sẻ mạng.
 
 ---
 
-## 2. Tech Stack & Kiến trúc hệ thống
+## 2. Kiến trúc & Công nghệ
 
-### Bảng công nghệ phân tầng
+### Bảng công nghệ
 
-| Tầng kiến trúc | Công nghệ sử dụng | Vai trò & Điểm sáng kỹ thuật |
+| Tầng | Công nghệ | Vai trò & Điểm sáng |
 | :--- | :--- | :--- |
-| **Backend Core** | **Java 21 LTS** + **Spring Boot 3.3.4** | Nền tảng hiệu năng cao, tối ưu hóa bộ nhớ, sẵn sàng với Virtual Threads. |
-| **Data Access** | **Spring JDBC** + **HikariCP** | Quản lý connection pool động cho từng DB; kết nối dạng `ReadOnly` chống ghi đè dữ liệu sản xuất. |
-| **Database Adapters** | **PostgreSQL**, **MySQL**, **SQL Server (MSSQL)**, **Oracle** | Tích hợp sẵn 4 driver chính thức (`postgresql`, `mysql-connector-j`, `mssql-jdbc`, `ojdbc11`). Adapter hóa việc quote identifier và phân trang theo từng dialect. |
-| **Processing Engine** | **In-Memory Hash-Join Engine** | Batching 1000 khóa (`IN (:keys)`), ghép dữ liệu độ phức tạp $O(1)$ trên RAM, triệt tiêu độ trễ mạng qua OpenVPN/LAN. |
-| **Excel Generator** | **Apache POI 5.2.5** (OOXML) | Nạp template `.xlsx` có sẵn, clone `CellStyle`, giữ nguyên định dạng, tự động xử lý số dài (>15 chữ số) tránh lỗi làm tròn. |
-| **Frontend Workspace** | **Vue 3 cục bộ** + **CSS** | Bốn bước tạo báo cáo, thiết lập nguồn riêng, popup ứng dụng, desktop/mobile; không cần npm để chạy. |
-| **Security & Filter** | **Regex Whitelist** + **AccessControlFilter** | Chống SQL Injection bằng Regex `^[a-zA-Z0-9_]+$` trên identifier; HTTP Basic Auth khi bind ra mạng ngoài; không lưu mật khẩu vào disk. |
+| **Backend Core** | Java 21 LTS + Spring Boot 3.3.4 | Hiệu năng cao, kiến trúc phi trạng thái, sẵn sàng với Virtual Threads. |
+| **Data Access** | Spring JDBC + HikariCP | Quản lý pool động, kết nối ReadOnly an toàn cho môi trường sản xuất. |
+| **Database Adapters** | PostgreSQL, MySQL, SQL Server, Oracle | Tích hợp sẵn 4 driver chính thức, chuẩn hóa quote identifier và phân trang dialect. |
+| **Join Engine** | In-Memory Hash-Join | Batch 1.000 IDs mỗi đợt, ghép nối dữ liệu trong bộ nhớ RAM với độ phức tạp $O(1)$. |
+| **Excel Engine** | Apache POI 5.2.5 (OOXML / SXSSF) | Hỗ trợ stream hàng chục nghìn dòng, giữ nguyên cấu trúc template, xử lý số lớn (>15 số). |
+| **Frontend UI** | Vue 3 + Pure CSS (Đóng gói nội bộ) | Giao diện 4 bước trực quan, responsive desktop/mobile, không phụ thuộc Node.js khi chạy. |
 
-### Sơ đồ luồng xử lý (Data Flow)
+### Sơ đồ luồng dữ liệu
 
 ```mermaid
 flowchart TD
-    UI["Web Studio UI (Vue 3 + Tailwind)"] -->|"1. Upload Template & Map Fields"| Controller["Spring Boot REST API"]
+    UI["Web Workspace UI"] -->|"1. Thiết lập nguồn & ánh xạ"| Controller["Spring Boot REST API"]
     
-    subgraph Engine ["Report Engine (Memory Tier)"]
-        Controller -->|"2. Query Base Table"| Pool1["HikariCP Pool: MySQL / Postgres"]
-        Pool1 -->|"Fetch rows"| RawData["Base Rows in RAM"]
-        RawData -->|"3. Extract Keys & Batch 1000 IDs"| Pool2["HikariCP Pool: MSSQL / Oracle"]
-        Pool2 -->|"Batch IN-Query"| SubData["Sub-Service Rows"]
-        SubData -->|"4. In-Memory Hash-Join"| MergedData["Merged Master Dataset"]
+    subgraph Engine ["Report Engine (Bộ nhớ RAM)"]
+        Controller -->|"2. Đọc bảng gốc"| Pool1["HikariCP: MySQL / PostgreSQL"]
+        Pool1 -->|"Dòng gốc"| RawData["Dữ liệu bảng gốc"]
+        RawData -->|"3. Gom lô 1.000 khóa"| Pool2["HikariCP: SQL Server / Oracle"]
+        Pool2 -->|"Truy vấn theo lô"| SubData["Dữ liệu bảng phụ"]
+        SubData -->|"4. Hash-Join O(1)"| MergedData["Dữ liệu hợp nhất"]
     end
 
-    subgraph ExcelExporter ["Excel Stream Engine"]
+    subgraph Exporter ["Excel Engine"]
         MergedData --> POI["Apache POI 5.2.5"]
-        Template[".xlsx Template File"] --> POI
-        POI -->|"5. Clone Style & Fill Cells"| OutputStream["HTTP Response OutputStream"]
+        Template[".xlsx Mẫu (tùy chọn)"] --> POI
+        POI -->|"5. Ghi file Excel"| ExportFile["File báo cáo hoàn chỉnh (.xlsx)"]
     end
 
-    OutputStream -->|"Direct Download"| Browser["User Browser (.xlsx)"]
+    ExportFile -->|"Tải về an toàn"| Browser["Trình duyệt người dùng"]
 ```
 
 ---
 
-## 3. Khởi động nhanh trong 1 phút (Quick Start)
+## 3. Khởi động nhanh (Quick Start)
 
-### Yêu cầu hệ thống
-- **Java Development Kit (JDK):** Phiên bản **21** trở lên.
-- **Apache Maven:** Phiên bản **3.9+**.
+### Yêu cầu
+- **Java (JDK):** 21 trở lên.
+- **Maven:** 3.9 trở lên.
 
-### Các bước thực hiện
+### Chạy ứng dụng
 
 ```powershell
 # 1. Clone mã nguồn
 git clone https://github.com/Khanhnv26/Report_Export_Tools.git
 cd Report_Export_Tools
 
-# 2. Chạy trực tiếp qua Maven Spring Boot
+# 2. Chạy ứng dụng
 mvn spring-boot:run
 ```
 
-*(Hoặc đóng gói thành Fat JAR và khởi chạy):*
+*(Hoặc đóng gói JAR để chạy độc lập):*
 ```powershell
 mvn clean package -DskipTests
 java -jar target/microservice-report-tool-1.0.0.jar
 ```
 
-Ứng dụng sẽ khởi động tại cổng `8080` và **tự động mở trình duyệt** tại:
-👉 **`http://localhost:8080`**
+Mở trình duyệt tại: **`http://localhost:8080`** (hệ thống sẽ tự động mở trên trình duyệt mặc định).
 
 ---
 
-## 4. Giao diện Report Workspace
+## 4. Quy trình làm việc 4 bước (Workflow)
 
-1. **Nguồn dữ liệu:** chọn bảng gốc, cột và khóa ghép. Quản lý kết nối trong khu Thiết lập nguồn.
-2. **Cột đầu ra:** chọn xuất bảng mới hoặc template; thiết lập tiêu đề, thứ tự, kiểu và định dạng.
-3. **Lọc & sắp xếp:** lọc ngày tại database, thêm điều kiện sau ghép và chọn thứ tự kết quả.
-4. **Xem trước & xuất:** kiểm tra preview, cập nhật khi cấu hình thay đổi; tạo tác vụ nền, xem trạng thái, hủy hoặc tải file.
+```mermaid
+flowchart LR
+    Step1["1. Nguồn dữ liệu"] --> Step2["2. Cột đầu ra"] --> Step3["3. Lọc & sắp xếp"] --> Step4["4. Xem trước & xuất"]
+```
 
-Xem [hướng dẫn chi tiết và giới hạn](docs/REPORT_WORKSPACE.md).
+1. **Bước 1 — Nguồn dữ liệu:**
+   - Chọn database và bảng gốc, tích chọn các cột cần lấy.
+   - Thêm nguồn phụ ghép nối (JOIN), chọn khóa nguồn và khóa đích tương ứng.
+2. **Bước 2 — Cột đầu ra:**
+   - Chọn chế độ *Bảng Excel mới* hoặc *Dùng file mẫu* (`.xlsx`).
+   - Tinh chỉnh tên tiêu đề, kéo thả hoặc bấm nút để đổi thứ tự cột, chọn kiểu dữ liệu và định dạng hiển thị.
+3. **Bước 3 — Lọc & sắp xếp:**
+   - Lọc theo khoảng ngày (tối ưu đẩy xuống database xử lý).
+   - Thêm điều kiện lọc sau ghép (VÀ) và chọn cột sắp xếp kết quả.
+4. **Bước 4 — Xem trước & xuất:**
+   - Bấm **Tạo preview** để kiểm tra dữ liệu thực tế trước khi xuất file.
+   - Bấm **Tạo file Excel** để kích hoạt tác vụ chạy nền, theo dõi tiến trình và tải file về máy khi hoàn tất.
+
+Chi tiết xem tại [Tài liệu hướng dẫn Report Workspace](docs/REPORT_WORKSPACE.md).
 
 ---
 
-## 5. Đóng gói Standalone Executable (.exe) bằng `jpackage`
+## 5. Cấu hình & Biến môi trường
 
-Nếu muốn phân phối cho người dùng cuối chạy như một phần mềm desktop không cần cài Java:
+| Biến môi trường | Mặc định | Ý nghĩa |
+| :--- | :--- | :--- |
+| `REPORT_MAX_ROWS` | `50000` | Giới hạn số dòng tối đa cho mỗi lần xuất báo cáo (chống tràn RAM). |
+| `REPORT_TOOL_BIND_ADDRESS` | `127.0.0.1` | Địa chỉ IP lắng nghe (`0.0.0.0` để chia sẻ qua mạng nội bộ/VPN). |
+| `REPORT_TOOL_USERNAME` | *(trống)* | Tên đăng nhập khi bật bảo vệ truy cập mạng ngoài. |
+| `REPORT_TOOL_PASSWORD` | *(trống)* | Mật khẩu truy cập HTTP Basic Auth (bắt buộc khi bind ra ngoài localhost). |
+| `REPORT_DB_PASSWORD_<ID>` | *(trống)* | Tự động cấp mật khẩu cho database đã lưu theo ID (VD: `REPORT_DB_PASSWORD_DB_CRM`). |
+
+---
+
+## 6. Đóng gói file cài đặt (.exe) bằng `jpackage`
+
+Để phân phối cho người dùng cuối chạy như ứng dụng máy tính độc lập (không cần cài Java):
 
 ```powershell
-# 1. Build Fat JAR
 mvn clean package -DskipTests
 
-# 2. Sử dụng jpackage của JDK 21 tạo file .exe đóng gói kèm runtime tối giản
 jpackage `
   --type app-image `
   --name "ReportExportTool" `
@@ -120,51 +144,26 @@ jpackage `
   --win-shortcut `
   --win-menu
 ```
-Thư mục `dist/ReportExportTool/ReportExportTool.exe` có thể nén zip và gửi cho người dùng mở chạy trực tiếp.
+
+File thực thi sẽ nằm tại: `dist/ReportExportTool/ReportExportTool.exe`.
 
 ---
 
-## 6. Quy tắc dữ liệu & Vận hành nâng cao
-
-### Cơ chế ghép nối (Hash-Join) & Giới hạn dòng
-- Mối quan hệ ghép mặc định là **LEFT JOIN**: Nếu bản ghi phụ không tồn tại, dòng gốc vẫn được giữ nguyên và trường phụ hiển thị dấu `-`.
-- Giới hạn tải mặc định: **50.000 dòng** ở bảng gốc để đảm bảo an toàn bộ nhớ. Có thể tùy chỉnh qua biến môi trường `REPORT_MAX_ROWS` (từ `20` đến `1.000.000` tùy theo dung lượng RAM máy chủ).
-
-### Bảo mật mật khẩu & Tự động kết nối lại
-- File `connections.json` chỉ lưu metadata kết nối, **tuyệt đối không lưu mật khẩu** database.
-- Khi khởi động lại máy, bạn có thể bấm *Kết nối lại* trên UI hoặc truyền mật khẩu tự động qua biến môi trường theo cú pháp:
-  `REPORT_DB_PASSWORD_<ID_DB_VIẾT_HOA>`.
-  *(Ví dụ: ID kết nối là `db_a1b2c3` thì biến tương ứng là `REPORT_DB_PASSWORD_DB_A1B2C3`).*
-
-### Chia sẻ trên mạng LAN / OpenVPN
-Để các thành viên khác trong team truy cập qua địa chỉ IP:
-```powershell
-$env:REPORT_TOOL_BIND_ADDRESS = '0.0.0.0'
-$env:REPORT_TOOL_USERNAME = 'admin'
-$env:REPORT_TOOL_PASSWORD = 'MatKhauBaoMatCuaBan123'
-java -jar target/microservice-report-tool-1.0.0.jar
-```
-Khi bind ra ngoài IP `127.0.0.1`, hệ thống bắt buộc yêu cầu `REPORT_TOOL_PASSWORD` và tự động kích hoạt hộp thoại xác thực **HTTP Basic Authentication**.
-
----
-
-## 7. Kiểm thử hệ thống (Automated Testing)
+## 7. Kiểm thử tự động (Testing)
 
 ```powershell
-# Chạy toàn bộ kiểm thử Unit & Integration Test Java
+# Chạy toàn bộ Unit & Integration Test Backend (62 tests)
 mvn test
 
-# Chạy kiểm thử hồi quy Frontend JavaScript logic
+# Chạy kiểm thử hồi quy logic Frontend
 node src/test/js/app-regression.mjs
-```
 
-Bộ kiểm thử tự động xác minh:
-- Tải đúng Driver cho cả 4 hệ quản trị: MySQL, PostgreSQL, SQL Server, Oracle.
-- Truy vấn H2 mô phỏng tương thích 4 dialect, kiểm tra Hash-Join, schema, lọc khoảng ngày.
-- Kiểm tra toàn vẹn định dạng template Apache POI và mã hóa dữ liệu đặc thù (CLOB, BLOB Base64, Long ID).
+# Chạy kiểm thử tự động giao diện trình duyệt (Playwright)
+npm run test:browser
+```
 
 ---
 
 ## 8. Giấy phép (License)
 
-Dự án được phân phối dưới giấy phép **MIT License**. Tự do sử dụng, tùy biến và tích hợp trong các hệ thống nội bộ doanh nghiệp.
+Dự án được phân phối theo giấy phép [MIT License](LICENSE).
