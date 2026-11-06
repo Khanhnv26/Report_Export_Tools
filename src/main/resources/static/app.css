@@ -286,6 +286,12 @@ small, .help {
   margin: 0 0 14px;
 }
 
+.section-heading.spaced {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-light);
+}
+
 .section-heading h2, .section-heading p {
   margin-bottom: 0;
 }
@@ -570,6 +576,7 @@ main.sources-page {
   border-radius: var(--radius-sm);
   padding: 18px 20px;
   margin-top: 20px;
+  margin-bottom: 24px;
   background: #fafbfd;
   box-shadow: var(--shadow-xs);
 }
